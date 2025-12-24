@@ -6,6 +6,8 @@ YouTube Comment Explorer - unified tool for scraping YouTube data without API:
 - Channel videos metadata (newest -> oldest)
 - Video comments (with sorting and pagination)
 - Recursive channel + comments pipeline
+- Configuration management via ytce.yaml
+- Beautiful progress output with emojis
 
 ## Directory Layout
 
@@ -15,6 +17,7 @@ youtube-comment-explorer/
 |   `-- ytce/                        # Main python package
 |       |-- __init__.py
 |       |-- __main__.py              # python -m ytce
+|       |-- config.py                # Configuration management
 |       |-- cli/                     # CLI interface
 |       |   `-- main.py
 |       |-- pipelines/               # High-level workflows
@@ -39,26 +42,32 @@ youtube-comment-explorer/
 |       `-- utils/
 |           |-- logging.py
 |           |-- parsing.py
-|           `-- helpers.py
+|           |-- helpers.py
+|           `-- progress.py
 |-- data/                            # All exports (auto-created, gitignored)
 |   `-- .gitkeep                     # Keep folder in git
 |-- docs/
-|   `-- commands.txt                 # Quick reference
+|   |-- commands.txt                 # Legacy reference
+|   |-- QUICK_REFERENCE.md           # Quick command reference
+|   `-- ytce.yaml.example            # Example config file
 |-- scripts/                         # Dev/debug scripts
 |-- tests/
 |-- requirements.txt                 # Python dependencies
 |-- pyproject.toml
 |-- LICENSE
 |-- README.md
-`-- STRUCTURE.md
+|-- DEV.md                           # Developer documentation
+|-- STRUCTURE.md
+`-- ytce.yaml                        # Config file (created by ytce init)
 ```
 
 ## Module Responsibilities
 
 ### `src/ytce/cli/main.py` (Main CLI)
 - Unified command-line interface
-- Three subcommands: `videos`, `comments`, `channel-comments`
+- Five subcommands: `init`, `channel`, `video`, `comments`, `open`
 - Auto-generates output paths in `data/` folder
+- Loads configuration from ytce.yaml
 - Orchestrates calls to pipelines
 
 ### `src/ytce/pipelines/`
@@ -82,28 +91,47 @@ youtube-comment-explorer/
 
 ## Data Flow
 
-### 1. Videos Command
+### 1. Init Command
 ```
-User -> ytce videos @channel
+User -> ytce init
+  -> config.init_project()
+  -> Creates data/ directory
+  -> Creates ytce.yaml config file
+```
+
+### 2. Channel Command (with comments)
+```
+User -> ytce channel @channel
+  -> config.load_config()
+  -> pipelines.channel_comments
+  -> youtube.channel_videos + youtube.comments
+  -> data/<channel>/videos.json
+  -> data/<channel>/comments/NNNN_<videoId>.jsonl
+```
+
+### 3. Channel Command (videos only)
+```
+User -> ytce channel @channel --videos-only
+  -> config.load_config()
   -> pipelines.channel_videos
   -> youtube.channel_videos + youtube.*
   -> data/<channel>/videos.json
 ```
 
-### 2. Comments Command
+### 4. Comments Command
 ```
 User -> ytce comments VIDEO_ID
+  -> config.load_config()
   -> pipelines.video_comments
   -> youtube.comments + youtube.*
   -> data/<video_id>/comments.jsonl
 ```
 
-### 3. Channel-Comments Command
+### 5. Open Command
 ```
-User -> ytce channel-comments @channel
-  -> pipelines.channel_comments
-  -> data/<channel>/videos.json
-  -> data/<channel>/comments/NNNN_<videoId>.jsonl
+User -> ytce open @channel
+  -> Detects output directory
+  -> Opens in system file manager
 ```
 
 ## Key Features
@@ -114,14 +142,23 @@ User -> ytce channel-comments @channel
 - Creates directories automatically
 - Optional custom paths via `-o` or `--out-dir`
 
+### Configuration Management
+- `ytce.yaml` for project-level defaults
+- Smart defaults from config file
+- Command-line flags override config
+- Graceful degradation if PyYAML not installed
+
 ### Resume Support
-- `channel-comments` skips existing comment files
+- `channel` command skips existing comment files
 - Use `--no-resume` to force re-download
+- Resume enabled by default (configurable)
 
 ### Progress Tracking
+- Beautiful emoji-based progress indicators
 - Real-time video fetch updates
 - Comment count per video
 - Total statistics
+- Error handling with clear messages
 
 ### Error Handling
 - Consent redirect bypass
@@ -160,6 +197,7 @@ Each line is a JSON object:
 ## Dependencies
 
 - `requests` - HTTP client for web scraping
+- `pyyaml` - YAML config file support
 - Python 3.7+ - type hints, f-strings
 
 ## Git Configuration
@@ -185,14 +223,24 @@ Each line is a JSON object:
 
 ### Testing
 ```bash
+# Install in editable mode
+pip install -e .
+
+# Initialize project
+ytce init
+
 # Quick test
-PYTHONPATH=src python -m ytce videos @test --max-videos 1
-PYTHONPATH=src python -m ytce comments VIDEO_ID --limit 1
-PYTHONPATH=src python -m ytce channel-comments @test --max-videos 1 --per-video-limit 1
+ytce channel @test --limit 1
+ytce comments VIDEO_ID --limit 1
 
 # Check data folder
 find data -type f
+
+# Open output
+ytce open @test
 ```
+
+For development without installation, see [DEV.md](DEV.md).
 
 ### Code Style
 - Type hints for function signatures

@@ -1,2 +1,5 @@
 requests>=2.20.0
+pyyaml
 
+# Development dependencies
+pytest>=7.0.0

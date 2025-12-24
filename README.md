@@ -1,67 +1,139 @@
 # YouTube Comment Explorer
 
-Unified tool for scraping YouTube channel videos metadata and comments without using the YouTube API.
+Download YouTube videos metadata and comments without using the YouTube API.
 
-## Features
+## TL;DR
 
-- **Channel Videos Scraper**: Download all videos metadata from a YouTube channel (newest to oldest)
-- **Comment Downloader**: Download all comments for any video (with sorting options)
-- **Recursive Pipeline**: Download all videos from a channel + comments for each video automatically
-- **Shared Core**: Common YouTube scraping utilities (session, consent, InnerTube API)
-
-## Installation
-
-1. Clone this repository:
 ```bash
-git clone <repo-url>
-cd youtube-comment-explorer
+pip install -e .
+ytce channel @realmadrid
 ```
 
-2. Create and activate virtual environment:
-```bash
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+That's it! Your data will be in `data/realmadrid/`
 
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+## Quick Start
 
-4. (Optional) Install the package for `ytce` CLI:
+### 1. Install
+
 ```bash
 pip install -e .
 ```
 
-## Usage
-
-The main interface is `python -m ytce` (or `ytce` if installed). If you are not installing the package,
-run with `PYTHONPATH=src` so the module can be found.
-
-**All data is automatically saved to `data/<export-name>/` folder structure.**
-
-### 1. Download Channel Videos Metadata
-
-Download all videos from a channel as JSON (ordered newest -> oldest):
+### 2. Initialize (optional but recommended)
 
 ```bash
-# Auto-saves to data/<channel>/videos.json
-PYTHONPATH=src python -m ytce videos @channelname
-
-# Or specify custom output path
-ytce videos @channelname -o custom/path/videos.json
+ytce init
 ```
 
-Options:
-- `-o, --output PATH`: Custom output path (default: `data/<channel>/videos.json`)
-- `--max-videos N`: Limit number of videos to fetch
-- `--debug`: Enable debug output
+This creates:
+- `data/` directory for outputs
+- `ytce.yaml` config file with smart defaults
 
-Example output structure:
+### 3. Download data
+
+```bash
+# Download channel videos + all comments
+ytce channel @skryp
+
+# Download only videos metadata (no comments)
+ytce channel @skryp --videos-only
+
+# Download comments for a specific video
+ytce comments dQw4w9WgXcQ
+
+# Open the downloaded data
+ytce open @skryp
+```
+
+## Usage
+
+### Channel (videos + comments)
+
+Download all videos and comments from a channel:
+
+```bash
+ytce channel @channelname
+```
+
+This will:
+1. Fetch all videos from the channel
+2. Download comments for each video
+3. Save everything to `data/channelname/`
+
+**Options:**
+- `--videos-only` - Download only videos metadata, skip comments
+- `--limit N` - Process only first N videos
+- `--per-video-limit N` - Download max N comments per video
+- `--sort {recent,popular}` - Comment sort order (default: from config)
+- `--language CODE` - Language for YouTube UI (default: from config)
+- `--no-resume` - Re-download everything (ignore existing files)
+
+**Examples:**
+
+```bash
+# Quick test with 5 videos
+ytce channel @realmadrid --limit 5
+
+# Get popular comments instead of recent
+ytce channel @skryp --sort popular
+
+# Limit comments per video
+ytce channel @channelname --limit 10 --per-video-limit 100
+```
+
+### Comments (single video)
+
+Download comments for one video:
+
+```bash
+ytce comments VIDEO_ID
+```
+
+**Options:**
+- `--limit N` - Download max N comments
+- `--sort {recent,popular}` - Sort order
+- `--language CODE` - Language code
+- `-o PATH` - Custom output path
+
+**Example:**
+
+```bash
+ytce comments dQw4w9WgXcQ --limit 500
+```
+
+### Open Output Directory
+
+Quickly open the data folder in your file manager:
+
+```bash
+ytce open @channelname
+ytce open VIDEO_ID
+```
+
+## Output Structure
+
+After running `ytce channel @skryp`, you'll get:
+
+```
+data/
+└── skryp/
+    ├── videos.json              # All videos metadata
+    └── comments/
+        ├── 0001_VIDEO_ID.jsonl  # Comments for video 1
+        ├── 0002_VIDEO_ID.jsonl  # Comments for video 2
+        └── ...
+```
+
+### Videos JSON
+
+Single JSON file with all videos:
+
 ```json
 {
-  "channel_id": "@channelname",
-  "total_videos": 165,
+  "channel_id": "@skryp",
+  "total_videos": 312,
+  "scraped_at": "2025-01-05T12:34:56+00:00",
+  "source": "ytce/0.2.0",
   "videos": [
     {
       "video_id": "abc123",
@@ -78,201 +150,168 @@ Example output structure:
 }
 ```
 
-### 2. Download Comments for a Single Video
+**Guaranteed fields:**
+- `channel_id` (string)
+- `total_videos` (integer)
+- `scraped_at` (ISO 8601 timestamp)
+- `source` (string, ytce version)
+- `videos` (array)
 
-Download all comments from one video as JSONL (line-delimited JSON):
-
-```bash
-# Auto-saves to data/<video_id>/comments.jsonl
-PYTHONPATH=src python -m ytce comments VIDEO_ID
-
-# Or specify custom output path
-ytce comments VIDEO_ID -o custom/path/comments.jsonl
-```
-
-Options:
-- `-o, --output PATH`: Custom output path (default: `data/<video_id>/comments.jsonl`)
-- `--limit N`: Limit number of comments
-- `--sort {recent,popular}`: Sort by recent (default) or popular
-- `--language LANG`: Language for YouTube generated text (e.g., 'en')
-
-Example output (each line is a JSON object):
-```json
-{"cid": "...", "text": "Great video!", "time": "2 days ago", "author": "@username", "channel": "UC...", "votes": "5", "replies": "2", "photo": "https://...", "heart": false, "reply": false}
-```
-
-### 3. Download Channel Videos + All Comments (Recursive)
-
-Download all videos from a channel and comments for each video:
-
-```bash
-# Auto-saves to data/<channel>/
-PYTHONPATH=src python -m ytce channel-comments @channelname
-
-# Or specify custom output directory
-ytce channel-comments @channelname --out-dir custom/output
-```
-
-This creates:
-- `data/<channel>/videos.json` - all videos metadata
-- `data/<channel>/comments/0001_<videoId>.jsonl` - comments for video 1
-- `data/<channel>/comments/0002_<videoId>.jsonl` - comments for video 2
-- etc.
-
-Options:
-- `--out-dir PATH`: Custom output directory (default: `data/<channel>/`)
-- `--max-videos N`: Limit number of videos to process
-- `--per-video-limit N`: Limit comments per video
-- `--no-resume`: Ignore existing files and re-download everything
-- `--sort {recent,popular}`: Sort comments by recent (default) or popular
-- `--language LANG`: Language for YouTube generated text
-- `--debug`: Enable debug output
-
-The scraper will **resume automatically** if interrupted - it skips videos that already have comment files.
-
-## Examples
-
-### Example 1: Quick test with limited videos
-```bash
-# Auto-saves to data/realmadrid/videos.json
-PYTHONPATH=src python -m ytce videos @realmadrid --max-videos 10
-```
-
-### Example 2: Download comments for a specific video
-```bash
-# Auto-saves to data/dQw4w9WgXcQ/comments.jsonl
-PYTHONPATH=src python -m ytce comments dQw4w9WgXcQ --limit 100
-```
-
-### Example 3: Full channel backup
-```bash
-# Auto-saves to data/skryp/
-PYTHONPATH=src python -m ytce channel-comments @skryp
-```
-
-### Example 4: Channel with limits (for testing)
-```bash
-# Auto-saves to data/channelname/
-PYTHONPATH=src python -m ytce channel-comments @channelname \
-    --max-videos 5 \
-    --per-video-limit 50
-```
-
-## Project Structure
-
-```
-youtube-comment-explorer/
-|-- src/
-|   `-- ytce/                        # Main python package
-|       |-- __init__.py
-|       |-- __main__.py              # python -m ytce
-|       |-- cli/                     # CLI interface
-|       |   `-- main.py              # ytce videos / comments / channel-comments
-|       |-- pipelines/               # High-level workflows
-|       |   |-- channel_videos.py
-|       |   |-- video_comments.py
-|       |   `-- channel_comments.py
-|       |-- youtube/                 # YouTube primitives
-|       |   |-- session.py           # headers, consent, cookies
-|       |   |-- html.py              # fetch_html
-|       |   |-- extractors.py        # ytcfg, ytInitialData
-|       |   |-- innertube.py         # ajax requests
-|       |   |-- pagination.py
-|       |   |-- channel_videos.py
-|       |   `-- comments.py
-|       |-- storage/                 # output / fs / resume
-|       |   |-- paths.py
-|       |   |-- writers.py           # json / jsonl writers
-|       |   `-- resume.py
-|       |-- models/                  # typed structures
-|       |   |-- video.py
-|       |   `-- comment.py
-|       `-- utils/
-|           |-- logging.py
-|           |-- parsing.py
-|           `-- helpers.py
-|-- data/                            # outputs (gitignored)
-|   `-- .gitkeep
-|-- docs/
-|   `-- commands.txt
-|-- scripts/                         # dev / debug scripts
-|-- tests/
-|-- README.md
-|-- STRUCTURE.md
-|-- requirements.txt
-|-- pyproject.toml
-|-- .gitignore
-`-- LICENSE
-```
-
-## Technical Details
-
-### YouTube Core (`src/ytce/youtube/`)
-
-Common utilities used by both pipelines:
-- **Session Management**: `session.py` (headers, consent bypass)
-- **HTML Fetching**: `html.py` (`fetch_html()`)
-- **Data Extraction**: `extractors.py` (`extract_ytcfg()`, `extract_ytinitialdata()`)
-- **InnerTube API**: `innertube.py` (`inertube_ajax_request()`)
-- **Helpers**: `pagination.py` (`search_dict()`, `pick_longest_continuation()`)
-
-### Order Preservation
-
-**Important**: Videos are returned in YouTube's default order (newest -> oldest).
-- `order` field: 1 = newest video, N = oldest video
-- Order is preserved throughout pagination
-- The scraper uses explicit list traversal (not `search_dict`) to maintain order
-
-### Consent Handling
-
-The scrapers automatically handle YouTube's GDPR consent redirects without requiring user interaction.
-
-## Output Formats
-
-### Videos JSON
-Single JSON file with all videos and metadata. Videos ordered newest to oldest.
+**Each video object contains:**
+- `video_id` (string) - YouTube video ID
+- `title` (string)
+- `url` (string)
+- `order` (integer) - 1 = newest, N = oldest
+- `channel_id` (string, may be empty)
+- `view_count` (integer or null)
+- `view_count_raw` (string)
+- `length` (string)
+- `thumbnail_url` (string)
 
 ### Comments JSONL
-Line-delimited JSON (one comment per line). Easy to process with streaming parsers.
 
-Each comment contains:
-- `cid`: Comment ID
-- `text`: Comment text content
-- `time`: Relative time (e.g., "2 days ago")
-- `author`: Author username
-- `channel`: Author channel ID
-- `votes`: Like count
-- `replies`: Reply count
-- `photo`: Author avatar URL
-- `heart`: Has creator heart
-- `reply`: Is a reply to another comment
+Line-delimited JSON (one comment per line):
+
+```jsonl
+{"cid": "...", "text": "Great video!", "time": "2 days ago", "author": "@user", "channel": "UC...", "votes": "5", "replies": "2", "photo": "https://...", "heart": false, "reply": false, "scraped_at": "2025-01-05T12:34:56+00:00", "source": "ytce/0.2.0"}
+{"cid": "...", "text": "Another comment", "time": "1 week ago", "author": "@another", "channel": "UC...", "votes": "12", "replies": "0", "photo": "https://...", "heart": true, "reply": false, "scraped_at": "2025-01-05T12:34:56+00:00", "source": "ytce/0.2.0"}
+```
+
+**Guaranteed fields (each comment):**
+- `cid` (string) - Comment ID
+- `text` (string) - Comment text
+- `time` (string) - Relative time (e.g., "2 days ago")
+- `author` (string) - Author username
+- `channel` (string) - Author channel ID
+- `votes` (string) - Like count
+- `replies` (string) - Reply count
+- `photo` (string) - Author avatar URL
+- `heart` (boolean) - Has creator heart
+- `reply` (boolean) - Is a reply
+- `scraped_at` (string) - ISO 8601 timestamp
+- `source` (string) - ytce version
+
+### Format Guarantees
+
+**Stability Promise:**
+- ✅ All documented fields will always be present
+- ✅ Field types will never change
+- ✅ New fields may be added in the future (but never removed)
+- ✅ One JSON file = one JSON object
+- ✅ One JSONL file = one JSON object per line
+
+This makes ytce safe for:
+- Data pipelines
+- BI tools
+- Machine learning
+- Long-term archival
+
+## Configuration
+
+Create `ytce.yaml` in your project root (or run `ytce init`):
+
+```yaml
+output_dir: data
+language: en
+comment_sort: recent
+resume: true
+```
+
+These become your defaults, so you don't need to pass flags every time.
+
+## Progress Output
+
+You'll see nice progress indicators:
+
+```
+▶ Fetching channel: @skryp
+✔ Found 312 videos
+
+▶ Processing videos
+[001/312] dQw4w9WgXcQ — 1,245 comments
+[002/312] xYz123      — comments disabled
+[003/312] abc987      — 532 comments
+...
+
+✔ Done
+✔ Saved to data/skryp/
+```
+
+## Features
+
+- **No API Key Required** - Uses YouTube's web interface
+- **Smart Resume** - Automatically skips already downloaded videos
+- **Config File** - Set defaults once, use everywhere
+- **Progress Indicators** - Always know what's happening
+- **Auto-organizing** - Clean folder structure
 
 ## Requirements
 
 - Python 3.7+
 - `requests` library
 
-## License
+## Advanced Usage
 
-This project incorporates code from:
-- [youtube-comment-downloader](https://github.com/egbertbouman/youtube-comment-downloader) by Egbert Bouman (MIT License)
+### Custom Output Directory
 
-See individual module directories for original licenses.
+```bash
+ytce channel @name --out-dir /path/to/custom/location
+```
 
-## Notes
+### Debug Mode
 
-- **No API key required** - uses YouTube's web interface
-- **Rate limiting**: Built-in delays between requests to be respectful to YouTube's servers
-- **Resume capability**: The recursive channel-comments command can resume interrupted downloads
-- **No authentication**: Works without YouTube account login
+```bash
+ytce channel @name --debug
+```
+
+### Process Specific Range
+
+```bash
+# Get first 10 videos only
+ytce channel @name --limit 10
+
+# Get 50 comments per video
+ytce channel @name --per-video-limit 50
+```
 
 ## Troubleshooting
 
 ### "Failed to extract ytcfg" error
-YouTube may have changed their page structure. The HTML is saved to `/tmp/youtube_debug.html` for inspection.
-
-### Consent redirect issues
-The scraper should handle consent automatically. If issues persist, try accessing the channel/video in a browser first.
+YouTube may have changed their page structure. Debug HTML is saved to `/tmp/youtube_debug.html`.
 
 ### Comments not downloading
-Check if comments are disabled for the video. The scraper will skip videos with disabled comments.
+Check if comments are disabled for the video. The scraper will automatically skip these.
+
+### Module not found
+Make sure you installed the package: `pip install -e .`
+
+## Project Structure
+
+```
+youtube-comment-explorer/
+├── src/
+│   └── ytce/                    # Main package
+│       ├── cli/                 # CLI interface
+│       ├── pipelines/           # High-level workflows
+│       ├── youtube/             # YouTube scraping primitives
+│       ├── storage/             # File I/O and paths
+│       ├── models/              # Data structures
+│       ├── utils/               # Helpers
+│       └── config.py            # Configuration management
+├── data/                        # Downloaded data (gitignored)
+├── README.md                    # This file
+├── pyproject.toml               # Package configuration
+└── requirements.txt             # Dependencies
+```
+
+For development details, see [DEV.md](DEV.md).
+
+## License
+
+This project incorporates code from [youtube-comment-downloader](https://github.com/egbertbouman/youtube-comment-downloader) by Egbert Bouman (MIT License).
+
+## Notes
+
+- **Rate Limiting**: Built-in delays between requests to respect YouTube's servers
+- **No Authentication**: Works without YouTube account login
+- **Order Preservation**: Videos are always ordered newest → oldest

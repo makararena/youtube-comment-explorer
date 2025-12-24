@@ -1,80 +1,281 @@
 from __future__ import annotations
 
 import argparse
+import os
+import platform
+import subprocess
+import sys
 from typing import Optional
 
+from ytce.__version__ import __version__
+from ytce.config import init_project, load_config
+from ytce.errors import EXIT_SUCCESS, handle_error
 from ytce.pipelines.channel_comments import run as run_channel_comments
 from ytce.pipelines.channel_videos import run as run_channel_videos
 from ytce.pipelines.video_comments import run as run_video_comments
 from ytce.storage.paths import channel_output_dir, channel_videos_path, video_comments_path
+from ytce.utils.progress import print_error, print_success
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="ytce")
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    parser = argparse.ArgumentParser(
+        prog="ytce",
+        description="YouTube Comment Explorer - Download videos and comments without API",
+        epilog="""
+Examples:
+  ytce init                          # Initialize project with config
+  ytce channel @realmadrid           # Download channel videos + comments
+  ytce channel @skryp --limit 5      # Download first 5 videos only
+  ytce comments dQw4w9WgXcQ          # Download comments for one video
+  ytce open @realmadrid              # Open output folder
 
-    p_videos = sub.add_parser("videos", help="Download channel videos metadata as JSON (newest -> oldest).")
-    p_videos.add_argument("channel_id")
-    p_videos.add_argument("-o", "--output", default=None, help="Output path (default: data/<channel>/videos.json)")
-    p_videos.add_argument("--max-videos", type=int, default=None)
-    p_videos.add_argument("--debug", action="store_true")
-
-    p_comments = sub.add_parser("comments", help="Download comments for a single video as JSONL.")
-    p_comments.add_argument("video_id")
-    p_comments.add_argument("-o", "--output", default=None, help="Output path (default: data/<video_id>/comments.jsonl)")
-    p_comments.add_argument("--sort", choices=["recent", "popular"], default="recent")
-    p_comments.add_argument("--limit", type=int, default=None)
-    p_comments.add_argument("--language", default=None)
-
-    p_channel = sub.add_parser(
-        "channel-comments",
-        help="Download channel videos + recursively download comments for each video (per-video JSONL).",
+For more info: https://github.com/your-repo/youtube-comment-explorer
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_channel.add_argument("channel_id")
-    p_channel.add_argument("--out-dir", default=None, help="Output directory (default: data/<channel>)")
-    p_channel.add_argument("--max-videos", type=int, default=None)
-    p_channel.add_argument("--sort", choices=["recent", "popular"], default="recent")
-    p_channel.add_argument("--per-video-limit", type=int, default=None)
-    p_channel.add_argument("--language", default=None)
-    p_channel.add_argument("--no-resume", action="store_true")
-    p_channel.add_argument("--debug", action="store_true")
+    parser.add_argument(
+        "-v", "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Show program version and exit",
+    )
+    sub = parser.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
+
+    # ytce init
+    p_init = sub.add_parser(
+        "init",
+        help="Initialize a new ytce project",
+        description="Initialize a new ytce project with config file and output directory.",
+        epilog="""
+Examples:
+  ytce init                    # Create data/ and ytce.yaml
+  ytce init --output-dir out   # Use 'out' as output directory
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_init.add_argument("--output-dir", default=None, help="Custom output directory (default: data)")
+
+    # ytce channel
+    p_channel = sub.add_parser(
+        "channel",
+        help="Download channel videos and comments",
+        usage="ytce channel @channelname [options]",
+        description="Downloads all videos from a YouTube channel and all comments for each video.",
+        epilog="""
+Examples:
+  ytce channel @realmadrid              # Download everything
+  ytce channel @skryp --limit 5         # First 5 videos only
+  ytce channel @test --videos-only      # Videos metadata only, skip comments
+  ytce channel @name --per-video-limit 100  # Max 100 comments per video
+  ytce channel @name --sort popular     # Get popular comments instead of recent
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_channel.add_argument("channel_id", metavar="@channel", help="Channel handle (e.g., @realmadrid) or channel ID")
+    p_channel.add_argument("--videos-only", action="store_true", help="Download only videos metadata, skip comments")
+    p_channel.add_argument("--limit", type=int, default=None, help="Limit number of videos to process")
+    p_channel.add_argument("--per-video-limit", type=int, default=None, help="Limit comments per video")
+    p_channel.add_argument("--sort", choices=["recent", "popular"], default=None, help="Comment sort order (default: from config or 'recent')")
+    p_channel.add_argument("--language", default=None, help="Language code (default: from config or 'en')")
+    p_channel.add_argument("--no-resume", action="store_true", help="Ignore existing files and re-download")
+    p_channel.add_argument("--out-dir", default=None, help="Custom output directory")
+    p_channel.add_argument("--dry-run", action="store_true", help="Preview what will be downloaded without actually downloading")
+    p_channel.add_argument("--debug", action="store_true", help="Enable debug output")
+
+    # ytce video
+    p_video = sub.add_parser(
+        "video",
+        help="Download single video metadata",
+        usage="ytce video VIDEO_ID [options]",
+        description="Downloads metadata for a single video (without comments).",
+        epilog="""
+Examples:
+  ytce video dQw4w9WgXcQ              # Download video metadata
+  ytce video abc123 -o video.json     # Save to custom path
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_video.add_argument("video_id", metavar="VIDEO_ID", help="YouTube video ID (e.g., dQw4w9WgXcQ)")
+    p_video.add_argument("-o", "--output", default=None, help="Custom output path")
+    p_video.add_argument("--debug", action="store_true", help="Enable debug output")
+
+    # ytce comments
+    p_comments = sub.add_parser(
+        "comments",
+        help="Download comments for a video",
+        usage="ytce comments VIDEO_ID [options]",
+        description="Downloads all comments from a single YouTube video.",
+        epilog="""
+Examples:
+  ytce comments dQw4w9WgXcQ           # Download all comments
+  ytce comments abc123 --limit 500    # Download first 500 comments
+  ytce comments xyz789 --sort popular # Get popular comments
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_comments.add_argument("video_id", metavar="VIDEO_ID", help="YouTube video ID (e.g., dQw4w9WgXcQ)")
+    p_comments.add_argument("-o", "--output", default=None, help="Custom output path")
+    p_comments.add_argument("--sort", choices=["recent", "popular"], default=None, help="Sort order (default: from config or 'recent')")
+    p_comments.add_argument("--limit", type=int, default=None, help="Limit number of comments")
+    p_comments.add_argument("--language", default=None, help="Language code (default: from config or 'en')")
+
+    # ytce open
+    p_open = sub.add_parser(
+        "open",
+        help="Open output directory in file manager",
+        usage="ytce open @channel|VIDEO_ID",
+        description="Opens the output directory for a channel or video in your system file manager.",
+        epilog="""
+Examples:
+  ytce open @realmadrid    # Open channel output folder
+  ytce open dQw4w9WgXcQ    # Open video output folder
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_open.add_argument("identifier", metavar="@channel|VIDEO_ID", help="Channel handle or video ID")
 
     return parser
 
 
-def main(argv: Optional[list[str]] = None) -> None:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+def open_directory(path: str) -> None:
+    """Open a directory in the system file manager."""
+    if not os.path.exists(path):
+        print_error(f"Directory not found: {path}")
+        return
+    
+    system = platform.system()
+    try:
+        if system == "Darwin":  # macOS
+            subprocess.run(["open", path], check=True)
+        elif system == "Windows":
+            os.startfile(path)
+        elif system == "Linux":
+            subprocess.run(["xdg-open", path], check=True)
+        else:
+            print_error(f"Unsupported platform: {system}")
+            return
+        print_success(f"Opened: {path}")
+    except Exception as e:
+        print_error(f"Failed to open directory: {e}")
 
-    # Auto-generate output paths in data/ folder
-    if args.cmd == "videos":
-        output = args.output or channel_videos_path(args.channel_id)
-        run_channel_videos(channel_id=args.channel_id, output=output, max_videos=args.max_videos, debug=args.debug)
-        return
-    if args.cmd == "comments":
-        output = args.output or video_comments_path(args.video_id)
-        run_video_comments(
-            video_id=args.video_id,
-            output=output,
-            sort=args.sort,
-            limit=args.limit,
-            language=args.language,
-        )
-        return
-    if args.cmd == "channel-comments":
-        out_dir = args.out_dir or channel_output_dir(args.channel_id)
-        run_channel_comments(
-            channel_id=args.channel_id,
-            out_dir=out_dir,
-            max_videos=args.max_videos,
-            sort=args.sort,
-            per_video_limit=args.per_video_limit,
-            language=args.language,
-            resume=not args.no_resume,
-            debug=args.debug,
-        )
-        return
+
+def main(argv: Optional[list[str]] = None) -> int:
+    """
+    Main entry point for ytce CLI.
+    
+    Returns:
+        Exit code (0 for success, 1-3 for errors)
+    """
+    try:
+        parser = build_parser()
+        args = parser.parse_args(argv)
+
+        # Determine if debug mode
+        debug = getattr(args, "debug", False)
+
+        # Load config
+        config = load_config()
+        base_dir = config.get("output_dir", "data")
+
+        # ytce init
+        if args.cmd == "init":
+            init_project(args.output_dir)
+            return EXIT_SUCCESS
+
+        # ytce open
+        if args.cmd == "open":
+            # Try to determine if it's a channel or video
+            identifier = args.identifier
+            # Try channel first
+            channel_dir = channel_output_dir(identifier, base_dir=base_dir)
+            if os.path.exists(channel_dir):
+                open_directory(channel_dir)
+                return EXIT_SUCCESS
+            # Try video
+            video_dir = os.path.join(base_dir, identifier)
+            if os.path.exists(video_dir):
+                open_directory(video_dir)
+                return EXIT_SUCCESS
+            # Not found
+            print_error(f"No data found for: {identifier}")
+            print_error(f"Searched in: {base_dir}")
+            from ytce.errors import EXIT_USER_ERROR
+            return EXIT_USER_ERROR
+
+        # ytce channel
+        if args.cmd == "channel":
+            # Merge config with args
+            sort = args.sort or config.get("comment_sort", "recent")
+            language = args.language or config.get("language", "en")
+            resume = not args.no_resume and config.get("resume", True)
+            dry_run = getattr(args, "dry_run", False)
+            
+            out_dir = args.out_dir or channel_output_dir(args.channel_id, base_dir=base_dir)
+            
+            if args.videos_only:
+                # Only download videos metadata
+                output = os.path.join(out_dir, "videos.json")
+                run_channel_videos(
+                    channel_id=args.channel_id,
+                    output=output,
+                    max_videos=args.limit,
+                    debug=debug,
+                )
+            else:
+                # Download videos + comments
+                run_channel_comments(
+                    channel_id=args.channel_id,
+                    out_dir=out_dir,
+                    max_videos=args.limit,
+                    sort=sort,
+                    per_video_limit=args.per_video_limit,
+                    language=language,
+                    resume=resume,
+                    debug=debug,
+                    dry_run=dry_run,
+                )
+            return EXIT_SUCCESS
+
+        # ytce video
+        if args.cmd == "video":
+            output = args.output or channel_videos_path(args.video_id, base_dir=base_dir)
+            # For single video, we'll just create a minimal videos.json
+            run_channel_videos(
+                channel_id=args.video_id,
+                output=output,
+                max_videos=1,
+                debug=debug,
+            )
+            return EXIT_SUCCESS
+
+        # ytce comments
+        if args.cmd == "comments":
+            sort = args.sort or config.get("comment_sort", "recent")
+            language = args.language or config.get("language", "en")
+            
+            output = args.output or video_comments_path(args.video_id, base_dir=base_dir)
+            run_video_comments(
+                video_id=args.video_id,
+                output=output,
+                sort=sort,
+                limit=args.limit,
+                language=language,
+            )
+            return EXIT_SUCCESS
+
+        # Should never reach here
+        return EXIT_SUCCESS
+
+    except Exception as e:
+        debug = False
+        try:
+            # Try to get debug flag if args were parsed
+            debug = getattr(args, "debug", False)
+        except:
+            pass
+        exit_code = handle_error(e, debug=debug)
+        return exit_code
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
