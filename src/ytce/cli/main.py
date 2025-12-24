@@ -29,7 +29,7 @@ Examples:
   ytce comments dQw4w9WgXcQ          # Download comments for one video
   ytce open @realmadrid              # Open output folder
 
-For more info: https://github.com/your-repo/youtube-comment-explorer
+For more info: https://github.com/makararena/youtube-data-scraper
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

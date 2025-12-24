@@ -1,4 +1,4 @@
-# Contributing to YouTube Comment Explorer
+# Contributing to YouTube Data Scraper
 
 Thank you for considering contributing to ytce! This document provides guidelines and instructions for contributing.
 
@@ -6,8 +6,8 @@ Thank you for considering contributing to ytce! This document provides guideline
 
 1. **Fork and Clone**
    ```bash
-   git fork https://github.com/your-username/youtube-comment-explorer
-   cd youtube-comment-explorer
+   git fork https://github.com/makararena/youtube-data-scraper
+   cd youtube-data-scraper
    ```
 
 2. **Setup Development Environment**
@@ -109,7 +109,7 @@ def process_data(input_path: str, limit: Optional[int] = None) -> int:
 ## Project Structure
 
 ```
-youtube-comment-explorer/
+youtube-data-scraper/
 ├── src/ytce/
 │   ├── cli/              # Command-line interface
 │   ├── pipelines/        # High-level workflows

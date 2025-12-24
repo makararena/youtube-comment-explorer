@@ -2,7 +2,7 @@
 
 ## Overview
 
-YouTube Comment Explorer - unified tool for scraping YouTube data without API:
+YouTube Data Scraper - unified tool for scraping YouTube data without API:
 - Channel videos metadata (newest -> oldest)
 - Video comments (with sorting and pagination)
 - Recursive channel + comments pipeline
@@ -12,7 +12,7 @@ YouTube Comment Explorer - unified tool for scraping YouTube data without API:
 ## Directory Layout
 
 ```
-youtube-comment-explorer/
+youtube-data-scraper/
 |-- src/
 |   `-- ytce/                        # Main python package
 |       |-- __init__.py

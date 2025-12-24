@@ -1,4 +1,4 @@
-# YouTube Comment Explorer
+# YouTube Data Scraper
 
 Download YouTube videos metadata and comments without using the YouTube API.
 
