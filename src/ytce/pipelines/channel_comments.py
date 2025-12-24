@@ -7,7 +7,7 @@ from typing import Optional
 from ytce.__version__ import __version__
 from ytce.storage.paths import channel_comments_dir, video_comments_filename
 from ytce.storage.resume import should_skip_existing
-from ytce.storage.writers import ensure_dir, write_json, write_jsonl
+from ytce.storage.writers import ensure_dir, write_csv, write_json, write_jsonl, write_videos_csv
 from ytce.utils.progress import format_number, print_step, print_success, print_video_progress
 from ytce.youtube.channel_videos import YoutubeChannelVideosScraper
 from ytce.youtube.comments import SORT_BY_POPULAR, SORT_BY_RECENT, YoutubeCommentDownloader
@@ -24,6 +24,7 @@ def run(
     resume: bool,
     debug: bool,
     dry_run: bool = False,
+    format: str = "jsonl",
 ) -> None:
     ensure_dir(out_dir)
     comments_dir = channel_comments_dir(out_dir)
@@ -51,18 +52,26 @@ def run(
         return
     
     # Write videos metadata
-    videos_path = os.path.join(out_dir, "videos.json")
-    
-    # Add metadata
-    videos_data = {
-        "channel_id": channel_id,
-        "total_videos": len(videos),
-        "videos": videos,
-        "scraped_at": datetime.now(timezone.utc).isoformat(),
-        "source": f"ytce/{__version__}",
-    }
-    
-    write_json(videos_path, videos_data)
+    if format == "csv":
+        videos_path = os.path.join(out_dir, "videos.csv")
+        videos_data = {
+            "channel_id": channel_id,
+            "total_videos": len(videos),
+            "videos": videos,
+            "scraped_at": datetime.now(timezone.utc).isoformat(),
+            "source": f"ytce/{__version__}",
+        }
+        write_videos_csv(videos_path, videos_data)
+    else:
+        videos_path = os.path.join(out_dir, "videos.json")
+        videos_data = {
+            "channel_id": channel_id,
+            "total_videos": len(videos),
+            "videos": videos,
+            "scraped_at": datetime.now(timezone.utc).isoformat(),
+            "source": f"ytce/{__version__}",
+        }
+        write_json(videos_path, videos_data)
     print()
 
     # 2) Comments per video
@@ -86,7 +95,7 @@ def run(
     for v in videos:
         video_id = v["video_id"]
         order = v.get("order", 0)
-        safe_name = video_comments_filename(order, video_id)
+        safe_name = video_comments_filename(order, video_id, format=format)
         out_path = os.path.join(comments_dir, safe_name)
 
         if should_skip_existing(out_path, resume=resume):
@@ -108,7 +117,10 @@ def run(
                     if per_video_limit is not None and count >= per_video_limit:
                         break
 
-            wrote = write_jsonl(out_path, limited())
+            if format == "csv":
+                wrote = write_csv(out_path, limited())
+            else:
+                wrote = write_jsonl(out_path, limited())
             print_video_progress(order, len(videos), video_id, comment_count=wrote)
         except Exception as e:
             if "comments disabled" in str(e).lower():

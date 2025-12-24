@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from ytce.__version__ import __version__
-from ytce.storage.writers import write_jsonl
+from ytce.storage.writers import write_csv, write_jsonl
 from ytce.utils.progress import format_number, print_step, print_success
 from ytce.youtube.comments import SORT_BY_POPULAR, SORT_BY_RECENT, YoutubeCommentDownloader
 
@@ -16,6 +16,7 @@ def run(
     sort: str,
     limit: Optional[int],
     language: Optional[str],
+    format: str = "jsonl",
 ) -> None:
     print_step(f"Fetching comments for video: {video_id}")
     downloader = YoutubeCommentDownloader()
@@ -37,6 +38,9 @@ def run(
             if limit is not None and count >= limit:
                 break
 
-    wrote = write_jsonl(output, limited())
+    if format == "csv":
+        wrote = write_csv(output, limited())
+    else:
+        wrote = write_jsonl(output, limited())
     print_success(f"Downloaded {format_number(wrote)} comments")
     print_success(f"Saved to {output}")

@@ -13,7 +13,7 @@ from ytce.errors import EXIT_SUCCESS, handle_error
 from ytce.pipelines.channel_comments import run as run_channel_comments
 from ytce.pipelines.channel_videos import run as run_channel_videos
 from ytce.pipelines.video_comments import run as run_video_comments
-from ytce.storage.paths import channel_output_dir, channel_videos_path, video_comments_path
+from ytce.storage.paths import channel_output_dir, channel_videos_path, channel_videos_path_with_format, video_comments_path
 from ytce.utils.progress import print_error, print_success
 
 
@@ -81,6 +81,7 @@ Examples:
     p_channel.add_argument("--out-dir", default=None, help="Custom output directory")
     p_channel.add_argument("--dry-run", action="store_true", help="Preview what will be downloaded without actually downloading")
     p_channel.add_argument("--debug", action="store_true", help="Enable debug output")
+    p_channel.add_argument("--format", choices=["json", "csv"], default="json", help="Output format for videos (default: json). Comments always use same format.")
 
     # ytce video
     p_video = sub.add_parser(
@@ -98,6 +99,7 @@ Examples:
     p_video.add_argument("video_id", metavar="VIDEO_ID", help="YouTube video ID (e.g., dQw4w9WgXcQ)")
     p_video.add_argument("-o", "--output", default=None, help="Custom output path")
     p_video.add_argument("--debug", action="store_true", help="Enable debug output")
+    p_video.add_argument("--format", choices=["json", "csv"], default="json", help="Output format (default: json)")
 
     # ytce comments
     p_comments = sub.add_parser(
@@ -118,6 +120,7 @@ Examples:
     p_comments.add_argument("--sort", choices=["recent", "popular"], default=None, help="Sort order (default: from config or 'recent')")
     p_comments.add_argument("--limit", type=int, default=None, help="Limit number of comments")
     p_comments.add_argument("--language", default=None, help="Language code (default: from config or 'en')")
+    p_comments.add_argument("--format", choices=["jsonl", "csv"], default="jsonl", help="Output format (default: jsonl)")
 
     # ytce open
     p_open = sub.add_parser(
@@ -212,14 +215,22 @@ def main(argv: Optional[list[str]] = None) -> int:
             
             out_dir = args.out_dir or channel_output_dir(args.channel_id, base_dir=base_dir)
             
+            format_arg = getattr(args, "format", "json")
+            # For channel command, format applies to videos; comments use jsonl/csv based on format
+            comment_format = "csv" if format_arg == "csv" else "jsonl"
+            
             if args.videos_only:
                 # Only download videos metadata
-                output = os.path.join(out_dir, "videos.json")
+                if format_arg == "csv":
+                    output = os.path.join(out_dir, "videos.csv")
+                else:
+                    output = os.path.join(out_dir, "videos.json")
                 run_channel_videos(
                     channel_id=args.channel_id,
                     output=output,
                     max_videos=args.limit,
                     debug=debug,
+                    format=format_arg,
                 )
             else:
                 # Download videos + comments
@@ -233,18 +244,27 @@ def main(argv: Optional[list[str]] = None) -> int:
                     resume=resume,
                     debug=debug,
                     dry_run=dry_run,
+                    format=comment_format,
                 )
             return EXIT_SUCCESS
 
         # ytce video
         if args.cmd == "video":
-            output = args.output or channel_videos_path(args.video_id, base_dir=base_dir)
-            # For single video, we'll just create a minimal videos.json
+            format_arg = getattr(args, "format", "json")
+            if args.output:
+                output = args.output
+            else:
+                if format_arg == "csv":
+                    output = channel_videos_path_with_format(args.video_id, base_dir=base_dir, format="csv")
+                else:
+                    output = channel_videos_path(args.video_id, base_dir=base_dir)
+            # For single video, we'll just create a minimal videos.json/csv
             run_channel_videos(
                 channel_id=args.video_id,
                 output=output,
                 max_videos=1,
                 debug=debug,
+                format=format_arg,
             )
             return EXIT_SUCCESS
 
@@ -252,14 +272,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         if args.cmd == "comments":
             sort = args.sort or config.get("comment_sort", "recent")
             language = args.language or config.get("language", "en")
+            format_arg = getattr(args, "format", "jsonl")
             
-            output = args.output or video_comments_path(args.video_id, base_dir=base_dir)
+            output = args.output or video_comments_path(args.video_id, base_dir=base_dir, format=format_arg)
             run_video_comments(
                 video_id=args.video_id,
                 output=output,
                 sort=sort,
                 limit=args.limit,
                 language=language,
+                format=format_arg,
             )
             return EXIT_SUCCESS
 
