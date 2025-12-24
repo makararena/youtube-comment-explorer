@@ -170,7 +170,6 @@ Add new scrapers to `src/ytce/youtube/`:
 
 - ✅ Argument parsing
 - ✅ Path generation
-- ✅ Resume logic
 - ✅ Error handling
 - ✅ Data format output
 - ❌ Actual YouTube scraping (too fragile)

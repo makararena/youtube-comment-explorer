@@ -13,7 +13,6 @@ def test_default_config():
     assert "output_dir" in DEFAULT_CONFIG
     assert "language" in DEFAULT_CONFIG
     assert "comment_sort" in DEFAULT_CONFIG
-    assert "resume" in DEFAULT_CONFIG
 
 
 def test_load_config_no_file():

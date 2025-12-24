@@ -77,7 +77,6 @@ Examples:
     p_channel.add_argument("--per-video-limit", type=int, default=None, help="Limit comments per video")
     p_channel.add_argument("--sort", choices=["recent", "popular"], default=None, help="Comment sort order (default: from config or 'recent')")
     p_channel.add_argument("--language", default=None, help="Language code (default: from config or 'en')")
-    p_channel.add_argument("--no-resume", action="store_true", help="Ignore existing files and re-download")
     p_channel.add_argument("--out-dir", default=None, help="Custom output directory")
     p_channel.add_argument("--dry-run", action="store_true", help="Preview what will be downloaded without actually downloading")
     p_channel.add_argument("--debug", action="store_true", help="Enable debug output")
@@ -210,7 +209,6 @@ def main(argv: Optional[list[str]] = None) -> int:
             # Merge config with args
             sort = args.sort or config.get("comment_sort", "recent")
             language = args.language or config.get("language", "en")
-            resume = not args.no_resume and config.get("resume", True)
             dry_run = getattr(args, "dry_run", False)
             
             out_dir = args.out_dir or channel_output_dir(args.channel_id, base_dir=base_dir)
@@ -241,7 +239,6 @@ def main(argv: Optional[list[str]] = None) -> int:
                     sort=sort,
                     per_video_limit=args.per_video_limit,
                     language=language,
-                    resume=resume,
                     debug=debug,
                     dry_run=dry_run,
                     format=comment_format,

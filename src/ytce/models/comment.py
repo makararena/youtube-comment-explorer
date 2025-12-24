@@ -7,6 +7,7 @@ from dataclasses import dataclass
 class Comment:
     cid: str
     text: str
+    text_length: int
     time: str
     author: str
     channel: str

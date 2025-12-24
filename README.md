@@ -66,7 +66,6 @@ This will:
 - `--per-video-limit N` - Download max N comments per video
 - `--sort {recent,popular}` - Comment sort order (default: from config)
 - `--language CODE` - Language for YouTube UI (default: from config)
-- `--no-resume` - Re-download everything (ignore existing files)
 
 **Examples:**
 
@@ -138,10 +137,12 @@ Single JSON file with all videos:
     {
       "video_id": "abc123",
       "title": "Video Title",
+      "title_length": 11,
       "order": 1,
       "view_count": 123456,
       "view_count_raw": "123,456 views",
       "length": "10:25",
+      "length_minutes": 10.417,
       "thumbnail_url": "https://...",
       "url": "https://www.youtube.com/watch?v=abc123",
       "channel_id": "UC..."
@@ -159,27 +160,30 @@ Single JSON file with all videos:
 
 **Each video object contains:**
 - `video_id` (string) - YouTube video ID
-- `title` (string)
-- `url` (string)
+- `title` (string) - Video title
+- `title_length` (integer) - Character count of title
+- `url` (string) - Full YouTube URL
 - `order` (integer) - 1 = newest, N = oldest
-- `channel_id` (string, may be empty)
-- `view_count` (integer or null)
-- `view_count_raw` (string)
-- `length` (string)
-- `thumbnail_url` (string)
+- `channel_id` (string) - Channel ID (now always populated)
+- `view_count` (integer or null) - Parsed view count
+- `view_count_raw` (string) - Original view count text
+- `length` (string) - Duration (e.g., "21:47")
+- `length_minutes` (float or null) - Duration in minutes for sorting
+- `thumbnail_url` (string) - Thumbnail URL
 
 ### Comments JSONL
 
 Line-delimited JSON (one comment per line):
 
 ```jsonl
-{"cid": "...", "text": "Great video!", "time": "2 days ago", "author": "@user", "channel": "UC...", "votes": "5", "replies": "2", "photo": "https://...", "heart": false, "reply": false, "scraped_at": "2025-01-05T12:34:56+00:00", "source": "ytce/0.2.0"}
-{"cid": "...", "text": "Another comment", "time": "1 week ago", "author": "@another", "channel": "UC...", "votes": "12", "replies": "0", "photo": "https://...", "heart": true, "reply": false, "scraped_at": "2025-01-05T12:34:56+00:00", "source": "ytce/0.2.0"}
+{"cid": "...", "text": "Great video!", "text_length": 13, "time": "2 days ago", "author": "@user", "channel": "UC...", "votes": "5", "replies": "2", "photo": "https://...", "heart": false, "reply": false, "scraped_at": "2025-01-05T12:34:56+00:00", "source": "ytce/0.2.0"}
+{"cid": "...", "text": "Another comment", "text_length": 15, "time": "1 week ago", "author": "@another", "channel": "UC...", "votes": "12", "replies": "0", "photo": "https://...", "heart": true, "reply": false, "scraped_at": "2025-01-05T12:34:56+00:00", "source": "ytce/0.2.0"}
 ```
 
 **Guaranteed fields (each comment):**
 - `cid` (string) - Comment ID
 - `text` (string) - Comment text
+- `text_length` (integer) - Character count of comment
 - `time` (string) - Relative time (e.g., "2 days ago")
 - `author` (string) - Author username
 - `channel` (string) - Author channel ID
@@ -214,36 +218,56 @@ Create `ytce.yaml` in your project root (or run `ytce init`):
 output_dir: data
 language: en
 comment_sort: recent
-resume: true
 ```
 
 These become your defaults, so you don't need to pass flags every time.
 
 ## Progress Output
 
-You'll see nice progress indicators:
+You'll see nice progress indicators with real-time statistics:
 
 ```
 ▶ Fetching channel: @skryp
 ✔ Found 312 videos
 
 ▶ Processing videos
-[001/312] dQw4w9WgXcQ — 1,245 comments
+  📊 Videos: 0/312 (0.0%) | Comments: 0 | Data: 0B | Time: 0s
+
+[001/312] dQw4w9WgXcQ — 1,245 comments — in 3s
 [002/312] xYz123      — comments disabled
-[003/312] abc987      — 532 comments
+[003/312] abc987      — 532 comments — in 2s
+  📊 Videos: 3/312 (1.0%) | Comments: 1,777 | Data: 125.3KB | Time: 8s | ETA: 13m 24s
 ...
 
-✔ Done
-✔ Saved to data/skryp/
+📊 FINAL STATISTICS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Total Videos:   312
+  Total Comments: 45,832
+  Total Data:     8.7MB
+  Total Time:     15m 42s
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✔ Done!
+✔ Output: data/skryp/
 ```
+
+Progress tracking includes:
+- Video completion percentage
+- Total comments downloaded
+- Data size (KB/MB/GB)
+- Time elapsed and ETA
+- Final summary statistics
 
 ## Features
 
 - **No API Key Required** - Uses YouTube's web interface
-- **Smart Resume** - Automatically skips already downloaded videos
+- **Simple & Clean** - Fresh scraping each time, no complex state management
+- **Rich Progress Tracking** - Real-time stats with percentages, data size, and ETA
+- **Smart Data Fields** - Includes text/title length, duration in minutes for easy analysis
+- **Safe Interruption** - Ctrl+C confirmation prevents accidental data loss
 - **Config File** - Set defaults once, use everywhere
-- **Progress Indicators** - Always know what's happening
 - **Auto-organizing** - Clean folder structure
+- **Final Statistics** - Beautiful summary of downloaded data
 
 ## Requirements
 

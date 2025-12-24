@@ -32,10 +32,9 @@ youtube-comment-explorer/
 |       |   |-- pagination.py
 |       |   |-- channel_videos.py
 |       |   `-- comments.py
-|       |-- storage/                 # output / fs / resume
+|       |-- storage/                 # output / fs
 |       |   |-- paths.py
-|       |   |-- writers.py
-|       |   `-- resume.py
+|       |   `-- writers.py
 |       |-- models/                  # typed structures
 |       |   |-- video.py
 |       |   `-- comment.py
@@ -86,7 +85,6 @@ youtube-comment-explorer/
 ### `src/ytce/storage/`
 - `paths.py`: default output paths
 - `writers.py`: JSON and JSONL writers
-- `resume.py`: skip/resume behavior
 
 ## Data Flow
 
@@ -147,16 +145,18 @@ User -> ytce open @channel
 - Command-line flags override config
 - Graceful degradation if PyYAML not installed
 
-### Resume Support
-- `channel` command skips existing comment files
-- Use `--no-resume` to force re-download
-- Resume enabled by default (configurable)
+### Fresh Scraping
+- Each channel scrape starts fresh, deleting any existing data
+- Simple and predictable behavior
+- No complex state management
 
 ### Progress Tracking
 - Beautiful emoji-based progress indicators
-- Real-time video fetch updates
+- Real-time statistics with percentages and ETA
+- Data size tracking (KB/MB/GB)
 - Comment count per video
-- Total statistics
+- Final statistics summary box
+- Ctrl+C safe interruption with confirmation
 - Error handling with clear messages
 
 ### Error Handling
@@ -176,9 +176,11 @@ User -> ytce open @channel
       "order": 1,
       "video_id": "abc123",
       "title": "Video Title",
+      "title_length": 11,
       "view_count": 123456,
       "view_count_raw": "123K views",
       "length": "10:25",
+      "length_minutes": 10.417,
       "thumbnail_url": "https://...",
       "url": "https://www.youtube.com/watch?v=abc123",
       "channel_id": "UC..."
@@ -190,7 +192,7 @@ User -> ytce open @channel
 ### Comments JSONL
 Each line is a JSON object:
 ```json
-{"cid": "...", "text": "Comment text", "time": "2 days ago", "author": "@user", "channel": "UC...", "votes": "5", "replies": "2", "photo": "https://...", "heart": false, "reply": false}
+{"cid": "...", "text": "Comment text", "text_length": 12, "time": "2 days ago", "author": "@user", "channel": "UC...", "votes": "5", "replies": "2", "photo": "https://...", "heart": false, "reply": false}
 ```
 
 ## Dependencies

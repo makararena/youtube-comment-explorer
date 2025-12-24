@@ -16,7 +16,6 @@ DEFAULT_CONFIG = {
     "output_dir": "data",
     "language": "en",
     "comment_sort": "recent",
-    "resume": True,
 }
 
 CONFIG_FILE = "ytce.yaml"

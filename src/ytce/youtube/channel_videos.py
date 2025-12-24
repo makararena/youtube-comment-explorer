@@ -73,6 +73,9 @@ class YoutubeChannelVideosScraper:
         all_videos = result["videos"]
         continuation = result["continuation"]
         ytcfg = result["ytcfg"]
+        
+        # Store the channel_id for later use in populating video data
+        self._current_channel_id = channel_id
 
         # Apply limit to initial batch if needed
         if max_videos and len(all_videos) > max_videos:
@@ -316,17 +319,60 @@ class YoutubeChannelVideosScraper:
         # Get thumbnail
         thumbnails = video_renderer.get("thumbnail", {}).get("thumbnails", [])
         thumbnail_url = thumbnails[-1].get("url", "") if thumbnails else ""
+        
+        # If channel_id is empty, use the one from the scraper context if available
+        if not channel_id and hasattr(self, '_current_channel_id'):
+            channel_id = self._current_channel_id
+        
+        # Calculate length in minutes for sorting
+        length_minutes = self._parse_length_to_minutes(length)
+        
+        # Calculate title length
+        title_length = len(title)
 
         return {
             "video_id": video_id,
             "title": title,
+            "title_length": title_length,
             "channel_id": channel_id,
             "view_count": view_count,  # Parsed as integer, None if not parseable
             "view_count_raw": view_count_raw,  # Original string for reference
             "length": length,
+            "length_minutes": length_minutes,
             "thumbnail_url": thumbnail_url,
             "url": f"https://www.youtube.com/watch?v={video_id}",
         }
+    
+    def _parse_length_to_minutes(self, length_str):
+        """
+        Parse video length string (e.g., "21:47", "1:05:30") to minutes as float.
+        
+        Args:
+            length_str: Length string like "21:47" or "1:05:30"
+        
+        Returns:
+            Float representing total minutes, or None if unable to parse
+        """
+        if not length_str:
+            return None
+        
+        try:
+            parts = length_str.strip().split(":")
+            if len(parts) == 2:
+                # Format: MM:SS
+                minutes = int(parts[0])
+                seconds = int(parts[1])
+                return minutes + (seconds / 60.0)
+            elif len(parts) == 3:
+                # Format: HH:MM:SS
+                hours = int(parts[0])
+                minutes = int(parts[1])
+                seconds = int(parts[2])
+                return (hours * 60) + minutes + (seconds / 60.0)
+            else:
+                return None
+        except (ValueError, AttributeError):
+            return None
 
     # NOTE: `search_dict` is provided by ytce.youtube.pagination; do not re-implement here.
 

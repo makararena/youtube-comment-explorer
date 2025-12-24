@@ -25,7 +25,6 @@ pytest --cov=ytce tests/
 ## Test Structure
 
 - `test_paths.py` - Storage path generation
-- `test_resume.py` - Resume logic
 - `test_config.py` - Configuration management
 - `test_cli.py` - CLI argument parsing
 - `test_errors.py` - Error handling
@@ -53,7 +52,6 @@ def test_feature_name():
 - ✅ Path generation
 - ✅ Argument parsing
 - ✅ Configuration loading
-- ✅ Resume logic
 - ✅ Error handling
 - ✅ Exit codes
 
