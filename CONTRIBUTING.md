@@ -320,12 +320,6 @@ Version is stored in `src/ytce/__version__.py`.
 - TL;DR section first
 - Examples before technical details
 
-### Updating DEV.md
-
-- Developer-focused
-- Architecture explanations
-- Setup instructions
-
 ### Adding to docs/
 
 - Quick references

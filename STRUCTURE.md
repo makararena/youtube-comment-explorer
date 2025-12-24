@@ -56,7 +56,6 @@ youtube-comment-explorer/
 |-- pyproject.toml
 |-- LICENSE
 |-- README.md
-|-- DEV.md                           # Developer documentation
 |-- STRUCTURE.md
 `-- ytce.yaml                        # Config file (created by ytce init)
 ```
@@ -239,8 +238,6 @@ find data -type f
 # Open output
 ytce open @test
 ```
-
-For development without installation, see [DEV.md](DEV.md).
 
 ### Code Style
 - Type hints for function signatures

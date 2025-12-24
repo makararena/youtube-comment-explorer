@@ -304,8 +304,6 @@ youtube-comment-explorer/
 └── requirements.txt             # Dependencies
 ```
 
-For development details, see [DEV.md](DEV.md).
-
 ## License
 
 This project incorporates code from [youtube-comment-downloader](https://github.com/egbertbouman/youtube-comment-downloader) by Egbert Bouman (MIT License).
