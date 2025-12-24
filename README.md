@@ -1,5 +1,11 @@
 # YouTube Data Scraper
 
+![Python](https://img.shields.io/badge/python-3.7%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![CLI](https://img.shields.io/badge/interface-CLI-orange)
+![No API](https://img.shields.io/badge/youtube-no%20api%20key-red)
+
+
 Download YouTube videos metadata and comments without using the YouTube API.
 
 ## TL;DR
