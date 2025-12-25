@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from ytce.__version__ import __version__
-from ytce.storage.writers import write_json, write_videos_csv
+from ytce.storage.writers import write_json, write_videos_csv, write_videos_parquet
 from ytce.utils.progress import format_number, print_step, print_success
 from ytce.youtube.channel_videos import YoutubeChannelVideosScraper
 
@@ -25,6 +25,8 @@ def run(*, channel_id: str, output: str, max_videos: Optional[int], debug: bool,
     
     if format == "csv":
         write_videos_csv(output, data)
+    elif format == "parquet":
+        write_videos_parquet(output, data)
     else:
         write_json(output, data)
     print_success(f"Found {format_number(len(videos))} videos")

@@ -6,7 +6,9 @@ YouTube Data Scraper - unified tool for scraping YouTube data without API:
 - Channel videos metadata (newest -> oldest)
 - Video comments (with sorting and pagination)
 - Recursive channel + comments pipeline
+- **Batch processing for multiple channels**
 - Configuration management via ytce.yaml
+- Multiple export formats (JSON, CSV, Parquet)
 - Beautiful progress output with emojis
 
 ## Directory Layout
@@ -63,15 +65,17 @@ youtube-data-scraper/
 
 ### `src/ytce/cli/main.py` (Main CLI)
 - Unified command-line interface
-- Five subcommands: `init`, `channel`, `video`, `comments`, `open`
+- Six subcommands: `init`, `channel`, `video`, `comments`, `batch`, `open`
 - Auto-generates output paths in `data/` folder
 - Loads configuration from ytce.yaml
 - Orchestrates calls to pipelines
 
 ### `src/ytce/pipelines/`
-- `channel_videos.py`: exports videos metadata JSON
-- `video_comments.py`: exports comments JSONL for a single video
-- `channel_comments.py`: exports channel videos + per-video comments JSONL
+- `channel_videos.py`: exports videos metadata in JSON, CSV, or Parquet format
+- `video_comments.py`: exports comments in JSONL, CSV, or Parquet format for a single video
+- `channel_comments.py`: (legacy) exports channel videos + per-video comments
+- `scraper.py`: **core scraping logic** - reusable `scrape_channel()` function
+- `batch.py`: batch processing for multiple channels with reports
 
 ### `src/ytce/youtube/`
 - `session.py`: session headers and consent bypass
@@ -84,7 +88,7 @@ youtube-data-scraper/
 
 ### `src/ytce/storage/`
 - `paths.py`: default output paths
-- `writers.py`: JSON and JSONL writers
+- `writers.py`: JSON, JSONL, CSV, and Parquet writers
 
 ## Data Flow
 
@@ -94,6 +98,7 @@ User -> ytce init
   -> config.init_project()
   -> Creates data/ directory
   -> Creates ytce.yaml config file
+  -> Creates channels.txt template
 ```
 
 ### 2. Channel Command (with comments)
@@ -131,6 +136,19 @@ User -> ytce open @channel
   -> Opens in system file manager
 ```
 
+### 6. Batch Command
+```
+User -> ytce batch channels.txt
+  -> config.load_config()
+  -> utils.channels.parse_channels_file()
+  -> For each channel:
+     -> pipelines.scraper.scrape_channel()
+     -> Collects ChannelStats
+  -> Generates BatchReport
+  -> Saves report.json + errors.log to data/_batch/
+  -> data/<channel1>/, data/<channel2>/, ...
+```
+
 ## Key Features
 
 ### Auto-Path Generation
@@ -166,6 +184,8 @@ User -> ytce open @channel
 
 ## Output Formats
 
+The tool supports three export formats: **JSON**, **CSV**, and **Parquet**. Use the `--format` flag to specify your preferred format.
+
 ### Videos JSON
 ```json
 {
@@ -195,10 +215,17 @@ Each line is a JSON object:
 {"cid": "...", "text": "Comment text", "text_length": 12, "time": "2 days ago", "author": "@user", "channel": "UC...", "votes": "5", "replies": "2", "photo": "https://...", "heart": false, "reply": false}
 ```
 
+### CSV Format
+Videos and comments can be exported to CSV files with headers, suitable for spreadsheet applications and data analysis tools.
+
+### Parquet Format
+Videos and comments can be exported to Apache Parquet format, a columnar storage format ideal for data analytics and processing with tools like Pandas, DuckDB, or Apache Spark. Parquet files use Snappy compression for efficient storage.
+
 ## Dependencies
 
 - `requests` - HTTP client for web scraping
 - `pyyaml` - YAML config file support
+- `pyarrow` - Parquet file format support
 - Python 3.7+ - type hints, f-strings
 
 ## Git Configuration
@@ -233,6 +260,16 @@ ytce init
 # Quick test
 ytce channel @test --limit 1
 ytce comments VIDEO_ID --limit 1
+
+# Test different formats
+ytce channel @test --limit 1 --format csv
+ytce channel @test --limit 1 --format parquet
+ytce comments VIDEO_ID --limit 1 --format parquet
+
+# Test batch processing
+# Edit channels.txt with test channels
+ytce batch channels.txt --limit 1 --dry-run
+ytce batch channels.txt --limit 1 --format parquet
 
 # Check data folder
 find data -type f

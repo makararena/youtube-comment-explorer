@@ -19,6 +19,23 @@ DEFAULT_CONFIG = {
 }
 
 CONFIG_FILE = "ytce.yaml"
+CHANNELS_FILE = "channels.txt"
+
+CHANNELS_TEMPLATE = """# List of YouTube channels to scrape
+# One channel per line
+# Supported formats:
+#   - @handle
+#   - https://www.youtube.com/@handle
+#   - https://www.youtube.com/channel/UC...
+#   - /channel/UC...
+#   - UC... (channel ID)
+#
+# Lines starting with # are comments and will be ignored
+# Empty lines are ignored
+
+@skryp
+@errornil
+"""
 
 
 def load_config(config_path: Optional[str] = None) -> dict[str, Any]:
@@ -73,11 +90,22 @@ def init_project(output_dir: Optional[str] = None) -> None:
     data_dir = config["output_dir"]
     os.makedirs(data_dir, exist_ok=True)
     
-    # Save config
-    save_config(config)
+    # Save config file (if it doesn't exist)
+    if not os.path.exists(CONFIG_FILE):
+        save_config(config)
+        print(f"✔ Config file: ./{CONFIG_FILE}")
+    else:
+        print(f"⚠️  Config file already exists: ./{CONFIG_FILE}")
+    
+    # Create channels.txt template (if it doesn't exist)
+    if not os.path.exists(CHANNELS_FILE):
+        with open(CHANNELS_FILE, "w", encoding="utf-8") as f:
+            f.write(CHANNELS_TEMPLATE)
+        print(f"✔ Channels file: ./{CHANNELS_FILE}")
+    else:
+        print(f"⚠️  Channels file already exists: ./{CHANNELS_FILE}")
     
     # Success messages
     print("✔ Project initialized")
     print(f"✔ Output directory: ./{data_dir}")
-    print(f"✔ Config file: ./{CONFIG_FILE}")
 

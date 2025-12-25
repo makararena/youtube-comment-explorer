@@ -10,8 +10,9 @@ from typing import Optional
 from ytce.__version__ import __version__
 from ytce.config import init_project, load_config
 from ytce.errors import EXIT_SUCCESS, handle_error
-from ytce.pipelines.channel_comments import run as run_channel_comments
+from ytce.pipelines.batch import run_batch
 from ytce.pipelines.channel_videos import run as run_channel_videos
+from ytce.pipelines.scraper import ScrapeConfig, scrape_channel
 from ytce.pipelines.video_comments import run as run_video_comments
 from ytce.storage.paths import channel_output_dir, channel_videos_path, channel_videos_path_with_format, video_comments_path
 from ytce.utils.progress import print_error, print_success
@@ -80,7 +81,7 @@ Examples:
     p_channel.add_argument("--out-dir", default=None, help="Custom output directory")
     p_channel.add_argument("--dry-run", action="store_true", help="Preview what will be downloaded without actually downloading")
     p_channel.add_argument("--debug", action="store_true", help="Enable debug output")
-    p_channel.add_argument("--format", choices=["json", "csv"], default="json", help="Output format for videos (default: json). Comments always use same format.")
+    p_channel.add_argument("--format", choices=["json", "csv", "parquet"], default="json", help="Output format for videos (default: json). Comments always use same format.")
 
     # ytce video
     p_video = sub.add_parser(
@@ -98,7 +99,7 @@ Examples:
     p_video.add_argument("video_id", metavar="VIDEO_ID", help="YouTube video ID (e.g., dQw4w9WgXcQ)")
     p_video.add_argument("-o", "--output", default=None, help="Custom output path")
     p_video.add_argument("--debug", action="store_true", help="Enable debug output")
-    p_video.add_argument("--format", choices=["json", "csv"], default="json", help="Output format (default: json)")
+    p_video.add_argument("--format", choices=["json", "csv", "parquet"], default="json", help="Output format (default: json)")
 
     # ytce comments
     p_comments = sub.add_parser(
@@ -119,7 +120,7 @@ Examples:
     p_comments.add_argument("--sort", choices=["recent", "popular"], default=None, help="Sort order (default: from config or 'recent')")
     p_comments.add_argument("--limit", type=int, default=None, help="Limit number of comments")
     p_comments.add_argument("--language", default=None, help="Language code (default: from config or 'en')")
-    p_comments.add_argument("--format", choices=["jsonl", "csv"], default="jsonl", help="Output format (default: jsonl)")
+    p_comments.add_argument("--format", choices=["jsonl", "csv", "parquet"], default="jsonl", help="Output format (default: jsonl)")
 
     # ytce open
     p_open = sub.add_parser(
@@ -135,6 +136,34 @@ Examples:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_open.add_argument("identifier", metavar="@channel|VIDEO_ID", help="Channel handle or video ID")
+
+    # ytce batch
+    p_batch = sub.add_parser(
+        "batch",
+        help="Scrape multiple channels from a file",
+        usage="ytce batch <channels_file> [options]",
+        description="Scrape multiple channels listed in a file. Uses same options as 'ytce channel'.",
+        epilog="""
+Examples:
+  ytce batch channels.txt                        # Scrape all channels
+  ytce batch channels.txt --format parquet       # Export to Parquet
+  ytce batch channels.txt --limit 10             # First 10 videos per channel
+  ytce batch channels.txt --fail-fast            # Stop on first error
+  ytce batch channels.txt --dry-run              # Preview without downloading
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_batch.add_argument("channels_file", metavar="<channels_file>", help="Path to file containing channel list")
+    p_batch.add_argument("--limit", type=int, default=None, help="Limit number of videos per channel")
+    p_batch.add_argument("--per-video-limit", type=int, default=None, help="Limit comments per video")
+    p_batch.add_argument("--sort", choices=["recent", "popular"], default=None, help="Comment sort order (default: from config or 'recent')")
+    p_batch.add_argument("--language", default=None, help="Language code (default: from config or 'en')")
+    p_batch.add_argument("--format", choices=["json", "csv", "parquet"], default="json", help="Output format (default: json)")
+    p_batch.add_argument("--out-dir", default=None, help="Custom base output directory")
+    p_batch.add_argument("--fail-fast", action="store_true", help="Stop on first error")
+    p_batch.add_argument("--dry-run", action="store_true", help="Preview what will be downloaded without actually downloading")
+    p_batch.add_argument("--sleep-between", type=int, default=2, help="Seconds to sleep between channels (default: 2)")
+    p_batch.add_argument("--debug", action="store_true", help="Enable debug output")
 
     return parser
 
@@ -210,17 +239,23 @@ def main(argv: Optional[list[str]] = None) -> int:
             sort = args.sort or config.get("comment_sort", "recent")
             language = args.language or config.get("language", "en")
             dry_run = getattr(args, "dry_run", False)
-            
-            out_dir = args.out_dir or channel_output_dir(args.channel_id, base_dir=base_dir)
-            
             format_arg = getattr(args, "format", "json")
-            # For channel command, format applies to videos; comments use jsonl/csv based on format
-            comment_format = "csv" if format_arg == "csv" else "jsonl"
+            
+            # For channel command, format applies to both videos and comments
+            if format_arg == "csv":
+                comment_format = "csv"
+            elif format_arg == "parquet":
+                comment_format = "parquet"
+            else:
+                comment_format = "jsonl"
             
             if args.videos_only:
-                # Only download videos metadata
+                # Only download videos metadata (use legacy pipeline)
+                out_dir = args.out_dir or channel_output_dir(args.channel_id, base_dir=base_dir)
                 if format_arg == "csv":
                     output = os.path.join(out_dir, "videos.csv")
+                elif format_arg == "parquet":
+                    output = os.path.join(out_dir, "videos.parquet")
                 else:
                     output = os.path.join(out_dir, "videos.json")
                 run_channel_videos(
@@ -231,18 +266,22 @@ def main(argv: Optional[list[str]] = None) -> int:
                     format=format_arg,
                 )
             else:
-                # Download videos + comments
-                run_channel_comments(
+                # Download videos + comments (use new refactored scraper)
+                scrape_config = ScrapeConfig(
                     channel_id=args.channel_id,
-                    out_dir=out_dir,
+                    out_dir=args.out_dir,
+                    base_dir=base_dir,
                     max_videos=args.limit,
-                    sort=sort,
                     per_video_limit=args.per_video_limit,
+                    sort=sort,
                     language=language,
-                    debug=debug,
-                    dry_run=dry_run,
                     format=comment_format,
+                    debug=debug,
+                    videos_only=False,
+                    dry_run=dry_run,
+                    quiet=False,
                 )
+                scrape_channel(scrape_config)
             return EXIT_SUCCESS
 
         # ytce video
@@ -253,6 +292,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             else:
                 if format_arg == "csv":
                     output = channel_videos_path_with_format(args.video_id, base_dir=base_dir, format="csv")
+                elif format_arg == "parquet":
+                    output = channel_videos_path_with_format(args.video_id, base_dir=base_dir, format="parquet")
                 else:
                     output = channel_videos_path(args.video_id, base_dir=base_dir)
             # For single video, we'll just create a minimal videos.json/csv
@@ -282,9 +323,47 @@ def main(argv: Optional[list[str]] = None) -> int:
             )
             return EXIT_SUCCESS
 
+        # ytce batch
+        if args.cmd == "batch":
+            # Merge config with args
+            sort = args.sort or config.get("comment_sort", "recent")
+            language = args.language or config.get("language", "en")
+            format_arg = getattr(args, "format", "json")
+            
+            # For batch command, format applies to both videos and comments
+            if format_arg == "csv":
+                comment_format = "csv"
+            elif format_arg == "parquet":
+                comment_format = "parquet"
+            else:
+                comment_format = "jsonl"
+            
+            # Determine base directory
+            batch_base_dir = args.out_dir or base_dir
+            
+            run_batch(
+                channels_file=args.channels_file,
+                base_dir=batch_base_dir,
+                max_videos=args.limit,
+                per_video_limit=args.per_video_limit,
+                sort=sort,
+                language=language,
+                format=comment_format,
+                debug=debug,
+                fail_fast=args.fail_fast,
+                dry_run=args.dry_run,
+                sleep_between=args.sleep_between,
+            )
+            return EXIT_SUCCESS
+
         # Should never reach here
         return EXIT_SUCCESS
 
+    except KeyboardInterrupt:
+        # User interrupted - exit gracefully
+        print()
+        return EXIT_SUCCESS
+    
     except Exception as e:
         debug = False
         try:

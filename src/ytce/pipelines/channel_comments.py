@@ -8,7 +8,7 @@ from typing import Iterator, Optional
 
 from ytce.__version__ import __version__
 from ytce.storage.paths import channel_comments_dir, video_comments_filename
-from ytce.storage.writers import ensure_dir, write_csv, write_json, write_jsonl, write_videos_csv
+from ytce.storage.writers import ensure_dir, write_csv, write_json, write_jsonl, write_parquet, write_videos_csv, write_videos_parquet
 from ytce.utils.progress import (
     ChannelProgressTracker,
     CommentProgressTracker,
@@ -72,25 +72,22 @@ def run(
         return
     
     # Write videos metadata
+    videos_data = {
+        "channel_id": channel_id,
+        "total_videos": len(videos),
+        "videos": videos,
+        "scraped_at": datetime.now(timezone.utc).isoformat(),
+        "source": f"ytce/{__version__}",
+    }
+    
     if format == "csv":
         videos_path = os.path.join(out_dir, "videos.csv")
-        videos_data = {
-            "channel_id": channel_id,
-            "total_videos": len(videos),
-            "videos": videos,
-            "scraped_at": datetime.now(timezone.utc).isoformat(),
-            "source": f"ytce/{__version__}",
-        }
         write_videos_csv(videos_path, videos_data)
+    elif format == "parquet":
+        videos_path = os.path.join(out_dir, "videos.parquet")
+        write_videos_parquet(videos_path, videos_data)
     else:
         videos_path = os.path.join(out_dir, "videos.json")
-        videos_data = {
-            "channel_id": channel_id,
-            "total_videos": len(videos),
-            "videos": videos,
-            "scraped_at": datetime.now(timezone.utc).isoformat(),
-            "source": f"ytce/{__version__}",
-        }
         write_json(videos_path, videos_data)
     
     # Track videos file size
@@ -166,6 +163,9 @@ def run(
                 if format == "csv":
                     # Use progress callback for real-time updates
                     wrote = write_csv(out_path, limited(), progress_callback=progress_tracker.update)
+                elif format == "parquet":
+                    # For Parquet, also track progress
+                    wrote = write_parquet(out_path, limited(), progress_callback=progress_tracker.update)
                 else:
                     # For JSONL, also track progress
                     wrote = write_jsonl(out_path, limited(), progress_callback=progress_tracker.update)

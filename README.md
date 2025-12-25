@@ -34,9 +34,11 @@ ytce init
 This creates:
 - `data/` directory for outputs
 - `ytce.yaml` config file with smart defaults
+- `channels.txt` template for batch scraping
 
 ### 3. Download data
 
+**Single channel:**
 ```bash
 # Download channel videos + all comments
 ytce channel @skryp
@@ -51,7 +53,114 @@ ytce comments dQw4w9WgXcQ
 ytce open @skryp
 ```
 
+**Multiple channels (batch):**
+```bash
+# Edit channels.txt with your channels
+# Then run batch scraping
+ytce batch channels.txt
+```
+
 ## Usage
+
+### Batch Scraping (Multiple Channels)
+
+The most efficient way to scrape multiple channels:
+
+```bash
+# 1. Initialize project (creates channels.txt template)
+ytce init
+
+# 2. Edit channels.txt with your channel list
+
+# 3. Run batch scraping
+ytce batch channels.txt
+```
+
+This will:
+1. Process each channel sequentially
+2. Save results to `data/<channel>/`
+3. Create batch report in `data/_batch/<timestamp>/`
+
+**channels.txt format:**
+
+```text
+# List your channels, one per line
+# Supported formats:
+@skryp
+@errornil
+https://www.youtube.com/@realmadrid
+https://www.youtube.com/channel/UC1234567890
+UC1234567890
+
+# Lines starting with # are comments
+# Empty lines are ignored
+```
+
+**Batch options:**
+
+```bash
+# Export to Parquet format
+ytce batch channels.txt --format parquet
+
+# Limit videos and comments
+ytce batch channels.txt --limit 10 --per-video-limit 100
+
+# Preview without downloading
+ytce batch channels.txt --dry-run
+
+# Stop on first error
+ytce batch channels.txt --fail-fast
+
+# Add delay between channels (default: 2 seconds)
+ytce batch channels.txt --sleep-between 5
+```
+
+**Batch artifacts:**
+
+After running batch, you'll find:
+
+```
+data/
+├── _batch/
+│   └── 2025-01-05_12-30/
+│       ├── channels.txt    # Snapshot of your channels file
+│       ├── report.json     # Machine-readable results
+│       └── errors.log      # Error details (if any)
+├── channel1/
+│   ├── videos.json
+│   └── comments/
+└── channel2/
+    ├── videos.json
+    └── comments/
+```
+
+**Batch output example:**
+
+```
+▶ Reading channels from: channels.txt
+✔ Found 12 channel(s) to process
+
+▶ [1/12] Processing: @skryp
+...
+✔ [1/12] @skryp — 312 videos — 45,832 comments — OK (8.7 MB, 15m 42s)
+
+▶ [2/12] Processing: @errornil
+...
+✔ [2/12] @errornil — 198 videos — 12,453 comments — OK (3.2 MB, 8m 15s)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Batch completed
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✔ Channels OK:     12
+✖ Channels failed: 0
+📼 Total videos:   5,321
+💬 Total comments: 1,240,331
+📦 Total data:     1.34 GB
+⏱ Total time:     1h 29m
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✔ Batch artifacts saved to: data/_batch/2025-01-05_12-30/
+```
 
 ### Channel (videos + comments)
 
@@ -72,6 +181,7 @@ This will:
 - `--per-video-limit N` - Download max N comments per video
 - `--sort {recent,popular}` - Comment sort order (default: from config)
 - `--language CODE` - Language for YouTube UI (default: from config)
+- `--format {json,csv,parquet}` - Output format (default: json)
 
 **Examples:**
 
@@ -84,6 +194,12 @@ ytce channel @skryp --sort popular
 
 # Limit comments per video
 ytce channel @channelname --limit 10 --per-video-limit 100
+
+# Export to CSV format
+ytce channel @channelname --format csv
+
+# Export to Parquet format (ideal for data analysis)
+ytce channel @channelname --format parquet
 ```
 
 ### Comments (single video)
@@ -98,12 +214,16 @@ ytce comments VIDEO_ID
 - `--limit N` - Download max N comments
 - `--sort {recent,popular}` - Sort order
 - `--language CODE` - Language code
+- `--format {jsonl,csv,parquet}` - Output format (default: jsonl)
 - `-o PATH` - Custom output path
 
-**Example:**
+**Examples:**
 
 ```bash
 ytce comments dQw4w9WgXcQ --limit 500
+
+# Export to Parquet format
+ytce comments dQw4w9WgXcQ --format parquet
 ```
 
 ### Open Output Directory
@@ -122,12 +242,20 @@ After running `ytce channel @skryp`, you'll get:
 ```
 data/
 └── skryp/
-    ├── videos.json              # All videos metadata
+    ├── videos.json              # All videos metadata (or .csv/.parquet)
     └── comments/
-        ├── 0001_VIDEO_ID.jsonl  # Comments for video 1
+        ├── 0001_VIDEO_ID.jsonl  # Comments for video 1 (or .csv/.parquet)
         ├── 0002_VIDEO_ID.jsonl  # Comments for video 2
         └── ...
 ```
+
+### Export Formats
+
+ytce supports three export formats:
+
+- **JSON/JSONL** (default) - Human-readable, ideal for web apps and general use
+- **CSV** - Compatible with Excel, spreadsheets, and traditional BI tools
+- **Parquet** - Columnar format with compression, ideal for data analysis with Pandas, DuckDB, or Apache Spark
 
 ### Videos JSON
 
@@ -266,6 +394,8 @@ Progress tracking includes:
 
 ## Features
 
+- **Batch Processing** - Scrape multiple channels efficiently with `ytce batch`
+- **Multiple Export Formats** - JSON, CSV, and Parquet support
 - **No API Key Required** - Uses YouTube's web interface
 - **Simple & Clean** - Fresh scraping each time, no complex state management
 - **Rich Progress Tracking** - Real-time stats with percentages, data size, and ETA
@@ -273,12 +403,15 @@ Progress tracking includes:
 - **Safe Interruption** - Ctrl+C confirmation prevents accidental data loss
 - **Config File** - Set defaults once, use everywhere
 - **Auto-organizing** - Clean folder structure
+- **Batch Reports** - Machine-readable JSON reports for pipeline integration
 - **Final Statistics** - Beautiful summary of downloaded data
 
 ## Requirements
 
 - Python 3.7+
-- `requests` library
+- `requests` - HTTP client for web scraping
+- `pyyaml` - YAML config file support (optional)
+- `pyarrow` - Parquet format support (optional, required for `--format parquet`)
 
 ## Advanced Usage
 

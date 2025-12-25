@@ -10,7 +10,12 @@ def channel_videos_path(channel_id: str, base_dir: str = "data") -> str:
 
 
 def video_comments_path(video_id: str, base_dir: str = "data", format: str = "jsonl") -> str:
-    ext = "csv" if format == "csv" else "jsonl"
+    if format == "csv":
+        ext = "csv"
+    elif format == "parquet":
+        ext = "parquet"
+    else:
+        ext = "jsonl"
     return os.path.join(base_dir, sanitize_name(video_id), f"comments.{ext}")
 
 
@@ -23,11 +28,21 @@ def channel_comments_dir(out_dir: str) -> str:
 
 
 def video_comments_filename(order: int, video_id: str, format: str = "jsonl") -> str:
-    ext = "csv" if format == "csv" else "jsonl"
+    if format == "csv":
+        ext = "csv"
+    elif format == "parquet":
+        ext = "parquet"
+    else:
+        ext = "jsonl"
     return f"{order:04d}_{video_id}.{ext}"
 
 
 def channel_videos_path_with_format(channel_id: str, base_dir: str = "data", format: str = "json") -> str:
     """Get path for channel videos file with specified format."""
-    ext = "csv" if format == "csv" else "json"
+    if format == "csv":
+        ext = "csv"
+    elif format == "parquet":
+        ext = "parquet"
+    else:
+        ext = "json"
     return os.path.join(base_dir, sanitize_name(channel_id), f"videos.{ext}")

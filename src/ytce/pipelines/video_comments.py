@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from ytce.__version__ import __version__
-from ytce.storage.writers import write_csv, write_jsonl
+from ytce.storage.writers import write_csv, write_jsonl, write_parquet
 from ytce.utils.progress import CommentProgressTracker, format_number, print_step, print_success
 from ytce.youtube.comments import SORT_BY_POPULAR, SORT_BY_RECENT, YoutubeCommentDownloader
 
@@ -63,6 +63,8 @@ def run(
 
     if format == "csv":
         wrote = write_csv(output, limited(), progress_callback=progress_tracker.update)
+    elif format == "parquet":
+        wrote = write_parquet(output, limited(), progress_callback=progress_tracker.update)
     else:
         wrote = write_jsonl(output, limited(), progress_callback=progress_tracker.update)
     

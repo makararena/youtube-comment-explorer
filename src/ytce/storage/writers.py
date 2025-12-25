@@ -6,6 +6,13 @@ import json
 import os
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
+try:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    HAS_PARQUET = True
+except ImportError:
+    HAS_PARQUET = False
+
 
 def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
@@ -161,5 +168,92 @@ def write_videos_csv(path: str, videos_data: Dict[str, Any]) -> int:
                 else:
                     row[key] = str(value)
             writer.writerow(row)
+    
+    return len(videos)
+
+
+def write_parquet(
+    path: str, 
+    items: Iterable[Dict[str, Any]], 
+    progress_callback: Optional[Callable[[int], None]] = None,
+) -> int:
+    """
+    Write items to a Parquet file in streaming fashion (writes as items come in).
+    
+    Args:
+        path: Output file path
+        items: Iterable of dictionaries to write
+        progress_callback: Optional callback function(count) called after each item is written
+    
+    Returns:
+        Number of rows written
+    
+    Raises:
+        ImportError: If pyarrow is not installed
+    """
+    if not HAS_PARQUET:
+        raise ImportError(
+            "pyarrow is required for Parquet export. "
+            "Install it with: pip install pyarrow"
+        )
+    
+    ensure_dir(os.path.dirname(path) or ".")
+    
+    # Collect items into a list (required for PyArrow)
+    items_list = []
+    count = 0
+    for item in items:
+        items_list.append(item)
+        count += 1
+        if progress_callback:
+            progress_callback(count)
+    
+    if not items_list:
+        # Create empty parquet file
+        schema = pa.schema([])
+        table = pa.table({}, schema=schema)
+        pq.write_table(table, path)
+        return 0
+    
+    # Convert to PyArrow table and write
+    table = pa.Table.from_pylist(items_list)
+    pq.write_table(table, path, compression='snappy')
+    
+    return count
+
+
+def write_videos_parquet(path: str, videos_data: Dict[str, Any]) -> int:
+    """
+    Write videos metadata to Parquet format.
+    
+    Args:
+        path: Output file path
+        videos_data: Dictionary with 'videos' key containing list of video dicts
+    
+    Returns:
+        Number of videos written
+    
+    Raises:
+        ImportError: If pyarrow is not installed
+    """
+    if not HAS_PARQUET:
+        raise ImportError(
+            "pyarrow is required for Parquet export. "
+            "Install it with: pip install pyarrow"
+        )
+    
+    ensure_dir(os.path.dirname(path) or ".")
+    videos = videos_data.get("videos", [])
+    
+    if not videos:
+        # Create empty parquet file
+        schema = pa.schema([])
+        table = pa.table({}, schema=schema)
+        pq.write_table(table, path)
+        return 0
+    
+    # Convert to PyArrow table and write
+    table = pa.Table.from_pylist(videos)
+    pq.write_table(table, path, compression='snappy')
     
     return len(videos)

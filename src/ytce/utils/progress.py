@@ -95,6 +95,24 @@ def format_bytes(bytes_size: int) -> str:
         return f"{gb:.2f}GB"
 
 
+def format_duration(seconds: float) -> str:
+    """Format duration in seconds to human-readable string."""
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    elif seconds < 3600:
+        minutes = int(seconds / 60)
+        secs = int(seconds % 60)
+        if secs > 0:
+            return f"{minutes}m {secs}s"
+        return f"{minutes}m"
+    else:
+        hours = int(seconds / 3600)
+        minutes = int((seconds % 3600) / 60)
+        if minutes > 0:
+            return f"{hours}h {minutes}m"
+        return f"{hours}h"
+
+
 class CommentProgressTracker:
     """Tracks and displays real-time comment export progress with ETA."""
     

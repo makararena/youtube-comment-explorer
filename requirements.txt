@@ -1,5 +1,6 @@
 requests>=2.20.0
 pyyaml
+pyarrow>=10.0.0
 
 # Development dependencies
 pytest>=7.0.0
