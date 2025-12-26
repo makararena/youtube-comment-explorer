@@ -1,0 +1,38 @@
+version: 1
+
+# Content moderation example
+# This example shows how to identify toxic, spam, or inappropriate content
+
+input:
+  path: "./data/VIDEO_ID/comments.jsonl"
+  format: jsonl
+  id_field: cid
+  text_field: text
+
+custom_prompt: ""
+
+tasks:
+  # Spam detection
+  - id: spam
+    type: binary_classification
+    question: "Is this comment spam or self-promotion?"
+    labels: ["yes", "no"]
+
+  # Toxicity scoring
+  - id: toxicity
+    type: scoring
+    question: "How toxic, aggressive, or harmful is this comment?"
+    scale: [0.0, 1.0]
+
+  # Inappropriate content detection
+  - id: inappropriate
+    type: binary_classification
+    question: "Does this comment contain inappropriate content (harassment, hate speech, etc.)?"
+    labels: ["yes", "no"]
+
+  # Off-topic detection
+  - id: off_topic
+    type: binary_classification
+    question: "Is this comment off-topic or unrelated to the video content?"
+    labels: ["yes", "no"]
+

@@ -43,6 +43,7 @@ def _validate_single_task(task: Dict, seen_ids: Set[str]) -> None:
     labels = task.get("labels")
     max_labels = task.get("max_labels")
     scale = task.get("scale")
+    target_language = task.get("target_language")
 
     # --- type-specific rules ---
     if task_type == TaskType.BINARY_CLASSIFICATION:
@@ -70,6 +71,13 @@ def _validate_single_task(task: Dict, seen_ids: Set[str]) -> None:
         if not scale[0] < scale[1]:
             raise ValueError(f"Task '{task_id}': scale[0] must be < scale[1]")
         _forbid(task_id, labels=labels, max_labels=max_labels)
+
+    elif task_type == TaskType.TRANSLATION:
+        if not isinstance(target_language, str) or not target_language.strip():
+            raise ValueError(
+                f"Task '{task_id}': translation requires non-empty 'target_language' (e.g., 'Russian' or 'ru')"
+            )
+        _forbid(task_id, labels=labels, max_labels=max_labels, scale=scale)
 
 
 def _forbid(task_id: str, **fields):

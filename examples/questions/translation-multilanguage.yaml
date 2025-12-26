@@ -1,0 +1,32 @@
+version: 1
+
+# Translation example - Translate comments to multiple languages
+# Useful for analyzing comments from international audiences or preparing data for multilingual analysis
+
+input:
+  path: "./data/VIDEO_ID/comments.jsonl"
+  format: jsonl
+  id_field: cid
+  text_field: text
+
+custom_prompt: ""
+
+tasks:
+  # Translate to Russian
+  - id: translation_ru
+    type: translation
+    question: "Translate this comment to Russian, preserving the original meaning, tone, and any technical terms or product names."
+    target_language: "Russian"
+
+  # Translate to Spanish
+  - id: translation_es
+    type: translation
+    question: "Translate this comment to Spanish, preserving the original meaning, tone, and any technical terms or product names."
+    target_language: "Spanish"
+
+  # Translate to French
+  - id: translation_fr
+    type: translation
+    question: "Translate this comment to French, preserving the original meaning, tone, and any technical terms or product names."
+    target_language: "French"
+

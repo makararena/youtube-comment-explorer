@@ -1,0 +1,20 @@
+version: 1
+
+# Basic sentiment analysis example
+# This example shows how to analyze comment sentiment using multi-class classification
+
+input:
+  path: "./data/VIDEO_ID/comments.jsonl"
+  format: jsonl
+  id_field: cid
+  text_field: text
+
+custom_prompt: ""
+
+tasks:
+  # Simple sentiment classification
+  - id: sentiment
+    type: multi_class
+    question: "What is the overall sentiment of this comment?"
+    labels: ["positive", "neutral", "negative"]
+

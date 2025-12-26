@@ -140,6 +140,7 @@ def _parse_tasks(raw_tasks: List[Dict[str, Any]]) -> List[TaskConfig]:
                 labels=task.get("labels"),
                 max_labels=task.get("max_labels"),
                 scale=tuple(task["scale"]) if "scale" in task else None,
+                target_language=task.get("target_language"),
             )
         )
     

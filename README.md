@@ -344,6 +344,174 @@ This makes ytce safe for:
 - Machine learning
 - Long-term archival
 
+## AI Comment Analysis
+
+Analyze your scraped comments using AI to extract insights, sentiment, topics, and more. The AI analysis feature supports multiple task types including classification, scoring, and **translation**.
+
+### Quick Start
+
+1. **Initialize a questions file:**
+   ```bash
+   ytce init
+   ```
+   This creates `questions.yaml` in your project root.
+
+2. **Edit `questions.yaml`** to define your analysis tasks (see examples below)
+
+3. **Run analysis:**
+   ```bash
+   # Test with mock data (no API calls)
+   ytce analyze questions.yaml --dry-run
+
+   # Real analysis (requires OpenAI API key)
+   export OPENAI_API_KEY="sk-..."
+   ytce analyze questions.yaml --model gpt-4.1-nano
+   ```
+
+### Example: Basic Sentiment Analysis
+
+```yaml
+version: 1
+
+input:
+  path: "./data/VIDEO_ID/comments.jsonl"
+  format: jsonl
+  id_field: cid
+  text_field: text
+
+tasks:
+  - id: sentiment
+    type: multi_class
+    question: "What is the sentiment of this comment?"
+    labels: ["positive", "neutral", "negative"]
+```
+
+### Example: Translation
+
+Translate comments to any language for international audience analysis:
+
+```yaml
+version: 1
+
+input:
+  path: "./data/VIDEO_ID/comments.jsonl"
+  format: jsonl
+  id_field: cid
+  text_field: text
+
+tasks:
+  - id: translation_ru
+    type: translation
+    question: "Translate this comment to Russian, preserving the original meaning, tone, and any technical terms or product names."
+    target_language: "Russian"
+```
+
+**Translation Use Cases:**
+- **International audience analysis**: Understand feedback from non-English speaking viewers
+- **Multilingual team collaboration**: Translate comments for team members who speak different languages
+- **Cross-language content analysis**: Compare sentiment and topics across language barriers
+- **Localization insights**: Identify region-specific concerns and preferences
+
+### Supported Task Types
+
+1. **Translation** (`translation`)
+   - Translate comments to any target language
+   - Preserves meaning, tone, and technical terms
+   - Required: `target_language` field
+
+2. **Binary Classification** (`binary_classification`)
+   - Classify into one of two categories
+   - Example: spam detection (yes/no)
+
+3. **Multi-Class Classification** (`multi_class`)
+   - Classify into exactly one category from multiple options
+   - Example: sentiment (positive/neutral/negative)
+
+4. **Multi-Label Classification** (`multi_label`)
+   - Assign multiple labels to each comment
+   - Example: topics (can have multiple topics per comment)
+
+5. **Scoring** (`scoring`)
+   - Assign numeric scores within a range
+   - Example: toxicity score (0.0 to 1.0)
+
+### Output Structure
+
+Results are automatically organized by video ID:
+
+```
+data/
+└── results/
+    └── VIDEO_ID/
+        ├── results.csv          # Full analysis results
+        └── results.preview.csv  # Preview results (if run interactively)
+```
+
+Each task creates two CSV columns:
+- `{task_id}_value`: The analysis result
+- `{task_id}_confidence`: Confidence score (0.0-1.0)
+
+### Example Questions Files
+
+See `examples/questions/` for ready-to-use templates:
+
+- **`basic-sentiment.yaml`** - Simple sentiment analysis
+- **`translation-multilanguage.yaml`** - Translate to multiple languages
+- **`product-feedback.yaml`** - Comprehensive product feedback analysis
+- **`content-moderation.yaml`** - Spam and toxicity detection
+- **`comprehensive-analysis.yaml`** - Full-featured multi-task analysis
+
+### Configuration
+
+**API Key Setup:**
+```bash
+# Set globally
+ytce key YOUR_API_KEY
+
+# Or use environment variable
+export OPENAI_API_KEY="sk-..."
+```
+
+**Analysis Options:**
+```bash
+# Limit to first N comments (useful for testing)
+ytce analyze questions.yaml --max-comments 100
+
+# Adjust batch size (default: 20)
+ytce analyze questions.yaml --batch-size 10
+
+# Use different model
+ytce analyze questions.yaml --model gpt-4.1-mini
+
+# Test without API calls
+ytce analyze questions.yaml --dry-run
+```
+
+### Advanced: Custom Prompts
+
+Add context to improve analysis accuracy:
+
+```yaml
+custom_prompt: |
+  This video announces a new product feature. We're analyzing user comments to identify:
+  - Feature requests and product improvement suggestions
+  - User sentiment and concerns
+  - Use cases and expectations
+  - Pain points and issues users are experiencing
+```
+
+The custom prompt is included in all analysis tasks to provide context about your channel, product, or use case.
+
+### Tips
+
+- **Start with dry-run**: Test your questions.yaml with `--dry-run` before spending API credits
+- **Use translation**: Add translation tasks to analyze international audiences
+- **Combine tasks**: Mix different task types for comprehensive insights
+- **Batch size**: Smaller batches (10-15) work better for longer comments
+- **Preview mode**: Interactive runs show preview results first and ask to proceed
+
+For more details, see `src/ytce/ai/README.md` and `examples/questions/README.md`.
+
 ## Configuration
 
 Create `ytce.yaml` in your project root (or run `ytce init`):
@@ -397,21 +565,28 @@ Progress tracking includes:
 - **Batch Processing** - Scrape multiple channels efficiently with `ytce batch`
 - **Multiple Export Formats** - JSON, CSV, and Parquet support
 - **No API Key Required** - Uses YouTube's web interface
+- **AI Comment Analysis** - Analyze comments with sentiment, topics, translation, and more
+- **Translation Support** - Translate comments to any language for international analysis
 - **Simple & Clean** - Fresh scraping each time, no complex state management
 - **Rich Progress Tracking** - Real-time stats with percentages, data size, and ETA
 - **Smart Data Fields** - Includes text/title length, duration in minutes for easy analysis
 - **Safe Interruption** - Ctrl+C confirmation prevents accidental data loss
 - **Config File** - Set defaults once, use everywhere
-- **Auto-organizing** - Clean folder structure
+- **Auto-organizing** - Clean folder structure with automatic results organization
 - **Batch Reports** - Machine-readable JSON reports for pipeline integration
 - **Final Statistics** - Beautiful summary of downloaded data
 
 ## Requirements
 
+**Core dependencies:**
 - Python 3.7+
 - `requests` - HTTP client for web scraping
 - `pyyaml` - YAML config file support (optional)
-- `pyarrow` - Parquet format support (optional, required for `--format parquet`)
+
+**Optional dependencies:**
+- `pyarrow` - Parquet format support (required for `--format parquet`)
+- `openai` - AI analysis support (required for `ytce analyze` without `--dry-run`)
+- `pandas` - CSV/Parquet file handling (required for CSV/Parquet formats)
 
 ## Advanced Usage
 

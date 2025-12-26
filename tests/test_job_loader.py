@@ -28,14 +28,15 @@ def test_load_job_from_questions_yaml():
     assert all(task.id for task in job.tasks)
     assert all(task.question for task in job.tasks)
     
-    # Check input config
-    assert job.input.path == "./comments.csv"
-    assert job.input.format == "csv"
-    assert job.input.id_field == "id"
-    assert job.input.text_field == "text"
+    # Check input config matches the file (avoid hardcoding template specifics)
+    data = yaml.safe_load(questions_path.read_text(encoding="utf-8"))
+    assert job.input.path == data["input"]["path"]
+    assert job.input.format == data["input"]["format"]
+    assert job.input.id_field == data["input"]["id_field"]
+    assert job.input.text_field == data["input"]["text_field"]
     
     # Check tasks
-    assert len(job.tasks) == 4
+    assert len(job.tasks) == len(data["tasks"])
     
     # Verify task types
     task_types = {task.type for task in job.tasks}

@@ -16,6 +16,7 @@ class TaskType(str, Enum):
     MULTI_CLASS = "multi_class"
     MULTI_LABEL = "multi_label"
     SCORING = "scoring"
+    TRANSLATION = "translation"
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,11 @@ class TaskConfig:
     # Numeric range of the score (min, max)
     # Required ONLY for SCORING tasks
     scale: Optional[Tuple[float, float]] = None
+
+    # --- Translation-related fields ---
+    # Target language for translation tasks (e.g., "Russian", "ru", "Spanish")
+    # Required ONLY for TRANSLATION tasks
+    target_language: Optional[str] = None
 
 
 __all__ = [

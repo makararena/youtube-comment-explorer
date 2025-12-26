@@ -16,6 +16,72 @@ def test_parser_init_command():
     assert args.cmd == "init"
 
 
+def test_parser_analyze_command_defaults():
+    """Test ytce analyze command parsing with defaults."""
+    parser = build_parser()
+    args = parser.parse_args(["analyze"])
+    assert args.cmd == "analyze"
+    assert args.questions == "questions.yaml"
+    assert args.output == "analysis_results.csv"
+    assert args.model is None
+    assert args.batch_size == 20
+    assert args.temperature == 0.0
+    assert args.dry_run is False
+    assert args.preview_count == 5
+    assert args.skip_preview is False
+
+
+def test_analyze_dry_run_smoke(tmp_path):
+    """
+    Smoke test for ytce analyze in dry-run mode.
+
+    Creates a minimal comments file + questions.yaml, runs analyze, and verifies
+    a CSV is produced.
+    """
+    import os
+
+    # Minimal comments CSV with custom columns to ensure InputConfig mapping works.
+    comments_path = tmp_path / "comments.csv"
+    comments_path.write_text("cid,body\nc1,hello\nc2,world\n", encoding="utf-8")
+
+    questions_path = tmp_path / "questions.yaml"
+    questions_path.write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "input:",
+                f"  path: \"{comments_path.as_posix()}\"",
+                "  format: csv",
+                "  id_field: cid",
+                "  text_field: body",
+                "custom_prompt: \"\"",
+                "tasks:",
+                "  - id: sentiment",
+                "    type: binary_classification",
+                "    question: \"Is this positive?\"",
+                "    labels: [\"yes\", \"no\"]",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "out.csv"
+
+    # Run via CLI entrypoint
+    from ytce.cli.main import main
+
+    cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        exit_code = main(["analyze", str(questions_path), "--dry-run", "-o", str(output_path)])
+        assert exit_code == EXIT_SUCCESS
+        assert output_path.exists()
+        content = output_path.read_text(encoding="utf-8")
+        assert "sentiment_value" in content
+    finally:
+        os.chdir(cwd)
+
 def test_init_questions_yaml_creates_file():
     """Test that init_questions_yaml creates questions.yaml."""
     with tempfile.TemporaryDirectory() as tmpdir:

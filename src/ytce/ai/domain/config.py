@@ -13,7 +13,7 @@ class RunConfig:
     - describes HOW the analysis is executed, not WHAT is analyzed
     """
 
-    # LLM model identifier (e.g. "gpt-4o-mini", "gpt-4.1", etc.)
+    # LLM model identifier (e.g. "gpt-4.1-nano", "gpt-4.1-mini", etc.)
     model: str
 
     # API key provided by the user
@@ -27,6 +27,13 @@ class RunConfig:
 
     # If True, skip actual LLM calls (used for previews / testing)
     dry_run: bool = False
+
+    # Optional limit on number of comments to load/process (used for preview runs)
+    max_comments: Optional[int] = None
+
+    # Maximum characters per comment text (longer comments will be truncated)
+    # None means no truncation
+    max_comment_length: Optional[int] = None
 
     # Optional run identifier (for logging / tracing)
     run_id: Optional[str] = None

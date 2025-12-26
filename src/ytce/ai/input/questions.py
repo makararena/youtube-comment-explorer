@@ -47,6 +47,7 @@ def load_questions(path: str) -> QuestionsConfig:
                 labels=task.get("labels"),
                 max_labels=task.get("max_labels"),
                 scale=tuple(task["scale"]) if "scale" in task else None,
+                target_language=task.get("target_language"),
             )
         )
 
@@ -62,3 +63,4 @@ def load_questions(path: str) -> QuestionsConfig:
 
 
 __all__ = ["QuestionsConfig", "load_questions"]
+

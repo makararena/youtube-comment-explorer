@@ -1,0 +1,65 @@
+version: 1
+
+# Comprehensive analysis example
+# This example combines multiple analysis types for deep insights
+
+input:
+  path: "./data/VIDEO_ID/comments.jsonl"
+  format: jsonl
+  id_field: cid
+  text_field: text
+
+custom_prompt: |
+  This is a technology product announcement video. We're analyzing comments to understand:
+  - User sentiment and reactions
+  - Feature requests and suggestions
+  - Technical questions and concerns
+  - Comparison with competitors
+  - Overall engagement quality
+
+tasks:
+  # Translation for multilingual analysis
+  - id: translation_ru
+    type: translation
+    question: "Translate this comment to Russian, preserving the original meaning, tone, and any technical terms or product names."
+    target_language: "Russian"
+
+  # Sentiment analysis
+  - id: sentiment
+    type: multi_class
+    question: "What is the overall sentiment of this comment?"
+    labels: ["very_positive", "positive", "neutral", "negative", "very_negative"]
+
+  # Question detection
+  - id: is_question
+    type: binary_classification
+    question: "Does this comment ask a question?"
+    labels: ["yes", "no"]
+
+  # Topic classification
+  - id: topics
+    type: multi_label
+    question: "What topics are discussed in this comment?"
+    labels:
+      - technical_details
+      - pricing
+      - availability
+      - comparison
+      - use_cases
+      - bugs_issues
+      - feature_request
+      - general_feedback
+    max_labels: 3
+
+  # Engagement quality scoring
+  - id: engagement_quality
+    type: scoring
+    question: "How valuable or engaging is this comment? (0 = low value, 1 = high value)"
+    scale: [0.0, 1.0]
+
+  # User type classification
+  - id: user_type
+    type: multi_class
+    question: "What type of user does this comment suggest?"
+    labels: ["developer", "business_user", "casual_user", "enthusiast", "unclear"]
+

@@ -10,6 +10,12 @@ readme = "README.md"
 requires-python = ">=3.7"
 dependencies = ["requests", "pyyaml"]
 
+[project.optional-dependencies]
+# Install with: pip install -e ".[ai]"
+ai = ["openai>=1.0.0"]
+# Install with: pip install -e ".[parquet]"
+parquet = ["pandas>=2.0.0", "pyarrow>=10.0.0"]
+
 [project.scripts]
 ytce = "ytce.cli.main:main"
 

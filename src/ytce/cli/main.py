@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import os
 import platform
 import subprocess
@@ -8,7 +9,7 @@ import sys
 from typing import Optional
 
 from ytce.__version__ import __version__
-from ytce.config import load_config
+from ytce.config import get_global_config_path, load_config, save_global_config
 from ytce.errors import EXIT_SUCCESS, handle_error
 from ytce.pipelines.batch import run_batch
 from ytce.pipelines.channel_videos import run as run_channel_videos
@@ -149,6 +150,161 @@ The generated file includes:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
+    # ytce analyze (AI)
+    p_analyze = sub.add_parser(
+        "analyze",
+        help="Run AI analysis defined in questions.yaml",
+        usage="ytce analyze [questions.yaml] [options]",
+        description="Runs the AI analysis pipeline over a comments file as configured in questions.yaml, and exports results to CSV.",
+        epilog="""
+Examples:
+  ytce analyze                         # Uses ./questions.yaml
+  ytce analyze questions.yaml          # Explicit job file
+  ytce analyze --dry-run               # Run without LLM calls (mock results)
+  ytce analyze --model gpt-4.1-nano    # Choose model (fast & cheap)
+  ytce analyze --api-key $OPENAI_API_KEY
+  ytce analyze -o results.csv          # Output CSV path
+
+Notes:
+  - For real runs, provide an API key via --api-key or OPENAI_API_KEY env var.
+  - The input comments file path is read from questions.yaml (input.path).
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_analyze.add_argument(
+        "questions",
+        nargs="?",
+        default="questions.yaml",
+        help="Path to questions.yaml (default: questions.yaml)",
+    )
+    p_analyze.add_argument(
+        "-o",
+        "--output",
+        default="analysis_results.csv",
+        help="Output CSV path (default: analysis_results.csv)",
+    )
+    p_analyze.add_argument(
+        "--model",
+        default=None,
+        help="Model name (default: from config, fallback: gpt-4.1-nano)",
+    )
+    p_analyze.add_argument(
+        "--api-key",
+        default=None,
+        help="LLM API key (default: from OPENAI_API_KEY env var)",
+    )
+    p_analyze.add_argument(
+        "--no-interactive",
+        action="store_true",
+        help="Disable interactive prompts (fail if API key/model missing)",
+    )
+    p_analyze.add_argument(
+        "--batch-size",
+        type=int,
+        default=5,
+        help="Comments per request (default: 5, recommended: 1-5)",
+    )
+    p_analyze.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help="Model temperature (default: 0.0)",
+    )
+    p_analyze.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Skip real LLM calls and generate mock results",
+    )
+    p_analyze.add_argument(
+        "--preview-count",
+        type=int,
+        default=5,
+        help="Analyze first N comments and ask to proceed (default: 5, interactive only)",
+    )
+    p_analyze.add_argument(
+        "--skip-preview",
+        action="store_true",
+        help="Skip the initial preview run (interactive only)",
+    )
+    p_analyze.add_argument(
+        "--max-comments",
+        type=int,
+        default=None,
+        help="Limit analysis to first N comments (default: process all)",
+    )
+    p_analyze.add_argument(
+        "--max-comment-length",
+        type=int,
+        default=1000,
+        help="Maximum characters per comment (longer comments will be truncated, default: 1000)",
+    )
+    p_analyze.add_argument(
+        "--log-level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Set logging level (default: INFO)",
+    )
+    p_analyze.add_argument(
+        "--debug",
+        action="store_const",
+        const="DEBUG",
+        dest="log_level",
+        help="Shortcut for --log-level DEBUG (shows detailed logs)",
+    )
+    p_analyze.add_argument(
+        "--log-file",
+        type=str,
+        default=None,
+        help="Write logs to file (default: auto-generate in results directory)",
+    )
+    p_analyze.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from previous incomplete run (if checkpoint exists)",
+    )
+    p_analyze.add_argument(
+        "--no-checkpoint",
+        action="store_true",
+        help="Disable checkpoint/resume functionality",
+    )
+
+    # ytce setup (AI config wizard)
+    p_setup = sub.add_parser(
+        "setup",
+        help="Configure OpenAI API key and model (saved globally)",
+        description="Interactive setup for OpenAI credentials and default model. Saves to the global user config file.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_setup.add_argument(
+        "--api-key",
+        default=None,
+        help="Set OpenAI API key (non-interactive if provided)",
+    )
+    p_setup.add_argument(
+        "--model",
+        default=None,
+        help="Set default model (non-interactive if provided)",
+    )
+
+    # ytce key (change API key)
+    p_key = sub.add_parser(
+        "key",
+        help="Set or change OpenAI API key (saved globally)",
+        description="Set or change the OpenAI API key in the global user config file.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_key.add_argument("--api-key", default=None, help="Set API key (non-interactive if provided)")
+
+    # ytce model (choose model)
+    p_model = sub.add_parser(
+        "model",
+        help="Choose default OpenAI model (saved globally)",
+        description="Choose the default OpenAI model in the global user config file.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_model.add_argument("--model", default=None, help="Set model (non-interactive if provided)")
+
     # ytce channel
     p_channel = sub.add_parser(
         "channel",
@@ -261,6 +417,219 @@ Examples:
     return parser
 
 
+OPENAI_MODEL_CHOICES = [
+    "gpt-4.1-nano",
+    "gpt-4.1-mini",
+]
+
+OPENAI_MODEL_DESCRIPTIONS = {
+    "gpt-4.1-nano": "fast & cheap (recommended)",
+    "gpt-4.1-mini": "better summaries, more expensive",
+}
+
+
+def _require_tty_or_error(no_interactive: bool, what: str) -> bool:
+    if no_interactive or not sys.stdin.isatty():
+        print_error(f"Missing {what} and interactive input is disabled.")
+        return False
+    return True
+
+
+def _prompt_api_key() -> str:
+    while True:
+        key = getpass.getpass("OpenAI API key (will be saved): ").strip()
+        if key:
+            return key
+        print_error("API key cannot be empty.")
+
+
+def _prompt_model(current: Optional[str] = None) -> str:
+    print("Choose OpenAI model (will be saved):")
+    for i, m in enumerate(OPENAI_MODEL_CHOICES, start=1):
+        desc = OPENAI_MODEL_DESCRIPTIONS.get(m, "")
+        desc_part = f"  ({desc})" if desc else ""
+        suffix = " (current)" if current and m == current else ""
+        print(f"  {i}. {m}{desc_part}{suffix}")
+    while True:
+        raw = input(f"Enter number [1-{len(OPENAI_MODEL_CHOICES)}]: ").strip()
+        try:
+            idx = int(raw)
+        except ValueError:
+            print_error("Please enter a number.")
+            continue
+        if 1 <= idx <= len(OPENAI_MODEL_CHOICES):
+            chosen = OPENAI_MODEL_CHOICES[idx - 1]
+            if chosen == "gpt-4.1-mini":
+                print("ℹ️  gpt-4.1-mini is more expensive than nano. Recommended mainly for summaries / deeper context.")
+            return chosen
+        print_error("Number out of range.")
+
+
+def _ensure_ai_config(
+    *,
+    config: dict,
+    api_key: Optional[str],
+    model: Optional[str],
+    dry_run: bool,
+    no_interactive: bool,
+) -> tuple[str, str, bool]:
+    """
+    Returns (api_key, model, did_persist).
+    Persists missing values to global config once obtained interactively.
+    """
+    if dry_run:
+        # No API key needed; still resolve model (for consistency/logging)
+        resolved_model = model or config.get("openai_model") or "gpt-4.1-nano"
+        if resolved_model not in OPENAI_MODEL_CHOICES:
+            resolved_model = "gpt-4.1-nano"
+        return "", resolved_model, False
+
+    resolved_api_key = api_key or os.environ.get("OPENAI_API_KEY") or config.get("openai_api_key")
+    resolved_model = model or config.get("openai_model") or "gpt-4.1-nano"
+    if resolved_model not in OPENAI_MODEL_CHOICES:
+        resolved_model = "gpt-4.1-nano"
+
+    did_persist = False
+    global_path = get_global_config_path()
+
+    if not resolved_api_key:
+        if not _require_tty_or_error(no_interactive, "OpenAI API key"):
+            raise ValueError("missing_api_key")
+        resolved_api_key = _prompt_api_key()
+        # Persist to global config
+        new_global_cfg = load_config(global_path) if global_path else {}
+        new_global_cfg["openai_api_key"] = resolved_api_key
+        save_global_config(new_global_cfg)
+        did_persist = True
+        print_success(f"Saved API key to: {global_path}")
+
+    # If model was not explicitly provided and not present in config, offer choice once
+    if model is None and not config.get("openai_model"):
+        if not _require_tty_or_error(no_interactive, "OpenAI model"):
+            raise ValueError("missing_model")
+        resolved_model = _prompt_model(current=resolved_model)
+        new_global_cfg = load_config(global_path) if global_path else {}
+        new_global_cfg["openai_model"] = resolved_model
+        save_global_config(new_global_cfg)
+        did_persist = True
+        print_success(f"Saved model to: {global_path}")
+
+    return resolved_api_key, resolved_model, did_persist
+
+
+def _walk_exception_chain(err: BaseException) -> list[BaseException]:
+    seen = set()
+    out: list[BaseException] = []
+    cur: Optional[BaseException] = err
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        out.append(cur)
+        cur = cur.__cause__ or cur.__context__
+    return out
+
+
+def _is_invalid_api_key_error(err: BaseException) -> bool:
+    try:
+        from ytce.ai.models.errors import ModelAuthenticationError
+    except Exception:
+        return False
+    for e in _walk_exception_chain(err):
+        if isinstance(e, ModelAuthenticationError):
+            return True
+        if "invalid_api_key" in str(e) or "Incorrect API key provided" in str(e):
+            return True
+    return False
+
+
+def _extract_video_id_from_input_path(input_path: str) -> Optional[str]:
+    """
+    Extract video ID from input path.
+    
+    Expected format: ./data/{video_id}/comments.jsonl or data/{video_id}/comments.jsonl
+    Returns None if video ID cannot be extracted.
+    """
+    import os
+    from pathlib import Path
+    
+    # Normalize path
+    path = Path(input_path).resolve()
+    parts = path.parts
+    
+    # Look for pattern: .../data/{video_id}/comments.{ext}
+    try:
+        # Find 'data' in path
+        if 'data' in parts:
+            data_idx = parts.index('data')
+            if data_idx + 1 < len(parts):
+                video_id = parts[data_idx + 1]
+                # Verify it's not a file extension (safety check)
+                if '.' not in video_id and video_id:
+                    return video_id
+    except (ValueError, IndexError):
+        pass
+    
+    return None
+
+
+def _get_results_output_path(input_path: str, output_path: Optional[str] = None, is_preview: bool = False) -> str:
+    """
+    Generate output path for results based on input path structure.
+    
+    If input path is in data/{video_id}/ format, outputs to data/results/{video_id}/results.csv
+    Otherwise uses the provided output_path or default.
+    
+    Args:
+        input_path: Path to input comments file from questions.yaml
+        output_path: User-provided output path (optional)
+        is_preview: If True, adds .preview before .csv extension
+        
+    Returns:
+        Output path string
+    """
+    import os
+    from pathlib import Path
+    
+    video_id = _extract_video_id_from_input_path(input_path)
+    
+    if video_id:
+        # Use structured path: data/results/{video_id}/results.csv
+        base_dir = Path("data") / "results" / video_id
+        base_dir.mkdir(parents=True, exist_ok=True)
+        
+        if is_preview:
+            return str(base_dir / "results.preview.csv")
+        else:
+            return str(base_dir / "results.csv")
+    
+    # Fallback to provided output_path or default
+    if output_path:
+        if is_preview:
+            if output_path.lower().endswith(".csv"):
+                return output_path[:-4] + ".preview.csv"
+            return output_path + ".preview.csv"
+        return output_path
+    
+    # Default fallback
+    default = "results.preview.csv" if is_preview else "results.csv"
+    return default
+
+
+def _preview_output_path(output_path: str) -> str:
+    if output_path.lower().endswith(".csv"):
+        return output_path[:-4] + ".preview.csv"
+    return output_path + ".preview.csv"
+
+
+def _confirm_proceed() -> bool:
+    while True:
+        raw = input("Proceed with full analysis? [y/N]: ").strip().lower()
+        if raw in ("", "n", "no"):
+            return False
+        if raw in ("y", "yes"):
+            return True
+        print_error("Please enter 'y' or 'n'.")
+
+
 def open_directory(path: str) -> None:
     """Open a directory in the system file manager."""
     if not os.path.exists(path):
@@ -304,6 +673,275 @@ def main(argv: Optional[list[str]] = None) -> int:
         # ytce init
         if args.cmd == "init":
             return init_questions_yaml()
+
+        # ytce setup / key / model
+        if args.cmd in {"setup", "key", "model"}:
+            global_path = get_global_config_path()
+            global_cfg = load_config(global_path) if global_path else {}
+
+            if args.cmd in {"setup", "key"}:
+                new_key = getattr(args, "api_key", None)
+                if not new_key:
+                    if not sys.stdin.isatty():
+                        print_error("Missing API key. Provide --api-key (non-interactive) or run in a TTY.")
+                        from ytce.errors import EXIT_USER_ERROR
+                        return EXIT_USER_ERROR
+                    new_key = _prompt_api_key()
+                global_cfg["openai_api_key"] = new_key
+
+            if args.cmd in {"setup", "model"}:
+                new_model = getattr(args, "model", None)
+                if not new_model:
+                    if not sys.stdin.isatty():
+                        print_error("Missing model. Provide --model (non-interactive) or run in a TTY.")
+                        from ytce.errors import EXIT_USER_ERROR
+                        return EXIT_USER_ERROR
+                    current = global_cfg.get("openai_model") or config.get("openai_model") or "gpt-4.1-nano"
+                    new_model = _prompt_model(current=current)
+                elif new_model == "gpt-4.1-mini":
+                    print("ℹ️  gpt-4.1-mini is more expensive than nano. Recommended mainly for summaries / deeper context.")
+                global_cfg["openai_model"] = new_model
+
+            save_global_config(global_cfg)
+            print_success(f"Saved AI config to: {global_path}")
+            return EXIT_SUCCESS
+
+        # ytce analyze (AI)
+        if args.cmd == "analyze":
+            from ytce.ai.domain.config import RunConfig
+            from ytce.ai.input.job import load_job
+            from ytce.ai.output import write_csv_from_analysis_result
+            from ytce.ai.runner import run_analysis
+
+            # Resolve and (optionally) persist AI settings
+            try:
+                api_key, model, _ = _ensure_ai_config(
+                    config=config,
+                    api_key=args.api_key,
+                    model=args.model,
+                    dry_run=args.dry_run,
+                    no_interactive=getattr(args, "no_interactive", False),
+                )
+            except ValueError:
+                from ytce.errors import EXIT_USER_ERROR
+                return EXIT_USER_ERROR
+
+            job = load_job(args.questions)
+            interactive = (not getattr(args, "no_interactive", False)) and sys.stdin.isatty()
+            
+            # Determine output paths based on input path structure
+            input_path = job.input.path
+            output_path = _get_results_output_path(input_path, args.output, is_preview=False)
+            preview_output_path = _get_results_output_path(input_path, args.output, is_preview=True)
+            
+            # Set up logging
+            import logging
+            from ytce.utils.logging import get_logger
+            
+            # Determine log file path
+            log_file = getattr(args, "log_file", None)
+            if log_file is None:
+                # Auto-generate log file in results directory
+                import os
+                results_dir = os.path.dirname(output_path)
+                os.makedirs(results_dir, exist_ok=True)
+                log_file = os.path.join(results_dir, "analysis.log")
+            
+            # Configure root logger for ytce.ai namespace
+            root_logger = logging.getLogger("ytce.ai")
+            log_level = getattr(logging, getattr(args, "log_level", "INFO").upper(), logging.INFO)
+            root_logger.setLevel(log_level)
+            
+            # Remove existing handlers to avoid duplicates
+            root_logger.handlers.clear()
+            
+            # Add file handler
+            file_handler = logging.FileHandler(log_file, encoding="utf-8")
+            file_formatter = logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S"
+            )
+            file_handler.setFormatter(file_formatter)
+            file_handler.setLevel(log_level)
+            root_logger.addHandler(file_handler)
+            
+            # Add console handler (only for INFO and above to avoid cluttering output)
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_formatter = logging.Formatter("[%(levelname)s] %(message)s")
+            console_handler.setFormatter(console_formatter)
+            # Only show WARNING and ERROR on console, unless DEBUG level
+            console_handler.setLevel(logging.WARNING if log_level != logging.DEBUG else log_level)
+            root_logger.addHandler(console_handler)
+            
+            logger = get_logger("ytce.ai.cli")
+            logger.info(f"Logging initialized: level={logging.getLevelName(log_level)}, file={log_file}")
+
+            def progress_callback(processed: int, total: int, task_info: str, is_preview: bool = False):
+                """Display progress updates."""
+                # Format numbers with commas for readability
+                processed_str = f"{processed:,}" if processed >= 1000 else str(processed)
+                total_str = f"{total:,}" if total >= 1000 else str(total)
+                # Add preview indicator
+                preview_prefix = "[PREVIEW] " if is_preview else ""
+                # Clear line and print progress (no percentage, just fraction)
+                print(f"\r  ✓ {preview_prefix}{processed_str}/{total_str} comments - {task_info}", end="", flush=True)
+            
+            def run_once(rc: RunConfig, is_preview: bool = False):
+                nonlocal api_key
+                tries = 0
+                # Determine checkpoint settings
+                enable_checkpoint = not getattr(args, "no_checkpoint", False) and not is_preview
+                checkpoint_dir = os.path.dirname(output_path) if enable_checkpoint else None
+                
+                while True:
+                    try:
+                        return run_analysis(
+                            job, 
+                            rc, 
+                            progress_callback=progress_callback if not rc.dry_run else None, 
+                            is_preview=is_preview,
+                            checkpoint_dir=checkpoint_dir,
+                            enable_checkpoint=enable_checkpoint,
+                        )
+                    except Exception as e:
+                        if _is_invalid_api_key_error(e):
+                            if not interactive:
+                                print_error("OpenAI API key is invalid. Set a new key via ytce key or provide --api-key / OPENAI_API_KEY.")
+                                from ytce.errors import EXIT_USER_ERROR
+                                raise RuntimeError(EXIT_USER_ERROR) from e
+                            tries += 1
+                            if tries > 3:
+                                print_error("Too many invalid API key attempts.")
+                                from ytce.errors import EXIT_USER_ERROR
+                                raise RuntimeError(EXIT_USER_ERROR) from e
+                            print_error("The provided OpenAI API key is invalid. Please input another one.")
+                            new_key = _prompt_api_key()
+                            global_path = get_global_config_path()
+                            global_cfg = load_config(global_path) if global_path else {}
+                            global_cfg["openai_api_key"] = new_key
+                            save_global_config(global_cfg)
+                            print_success(f"Saved API key to: {global_path}")
+                            api_key = new_key
+                            rc = RunConfig(
+                                model=rc.model,
+                                api_key=new_key,
+                                batch_size=rc.batch_size,
+                                temperature=rc.temperature,
+                                dry_run=rc.dry_run,
+                                max_comments=rc.max_comments,
+                                max_comment_length=rc.max_comment_length,
+                                run_id=rc.run_id,
+                            )
+                            continue
+                        raise
+
+            # Check for existing checkpoint
+            checkpoint_exists = False
+            if not getattr(args, "no_checkpoint", False):
+                from ytce.ai.runner.checkpoint import load_checkpoint
+                checkpoint = load_checkpoint(os.path.dirname(output_path))
+                if checkpoint:
+                    checkpoint_exists = True
+                    total_completed = sum(len(ids) for ids in checkpoint.completed.values())
+                    if interactive and not getattr(args, "resume", False):
+                        print()
+                        print(f"📋 Found incomplete analysis checkpoint:")
+                        print(f"   {total_completed} items completed")
+                        print(f"   Tasks: {', '.join(checkpoint.task_ids)}")
+                        resume = input("Resume from checkpoint? [Y/n]: ").strip().lower()
+                        if resume and resume != 'y':
+                            print("Deleting checkpoint and starting fresh...")
+                            from ytce.ai.runner.checkpoint import delete_checkpoint
+                            delete_checkpoint(os.path.dirname(output_path))
+                            checkpoint_exists = False
+                        else:
+                            print("Resuming from checkpoint...")
+                    elif getattr(args, "resume", False):
+                        print(f"📋 Resuming from checkpoint ({total_completed} items completed)")
+            
+            # Optional preview run (interactive only)
+            if interactive and (not args.dry_run) and (not args.skip_preview) and args.preview_count > 0 and not checkpoint_exists:
+                print(f"🔍 Running preview analysis on first {args.preview_count} comments...")
+                preview_cfg = RunConfig(
+                    model=model,
+                    api_key=api_key or "",
+                    batch_size=args.batch_size,
+                    temperature=args.temperature,
+                    dry_run=args.dry_run,
+                    max_comments=args.preview_count,
+                    max_comment_length=getattr(args, "max_comment_length", 1000),
+                )
+                try:
+                    preview_result, preview_cost = run_once(preview_cfg, is_preview=True)
+                except RuntimeError as e:
+                    if str(e).isdigit():
+                        return int(str(e))
+                    raise
+                print()  # New line after progress
+                write_csv_from_analysis_result(preview_result, preview_output_path)
+                print_success(f"Preview complete. Wrote: {preview_output_path}")
+                print_success(f"Preview comments: {preview_result.total_comments} | Tasks: {preview_result.total_tasks}")
+                if preview_cost.total_cost > 0:
+                    print(f"  Cost: ${preview_cost.total_cost:.4f} (Input: ${preview_cost.input_cost:.4f}, Output: ${preview_cost.output_cost:.4f})")
+                    
+                    # Calculate estimated cost for full analysis
+                    from ytce.ai.input.comments import load_comments_from_config
+                    total_comments = len(load_comments_from_config(job.input, limit=None))
+                    preview_comment_count = preview_result.total_comments
+                    
+                    if preview_comment_count > 0:
+                        cost_per_comment = preview_cost.total_cost / preview_comment_count
+                        estimated_total_cost = cost_per_comment * total_comments
+                        print()
+                        print(f"💰 Estimated cost for full analysis ({total_comments} comments): ${estimated_total_cost:.4f}")
+                        print(f"   (Based on ${cost_per_comment:.6f} per comment from preview)")
+                
+                print()
+                print("📊 Full analysis will process all comments from the input file.")
+                if not _confirm_proceed():
+                    return EXIT_SUCCESS
+                print()
+
+            run_config = RunConfig(
+                model=model,
+                api_key=api_key or "",
+                batch_size=args.batch_size,
+                temperature=args.temperature,
+                dry_run=args.dry_run,
+                max_comments=getattr(args, "max_comments", None),
+                max_comment_length=getattr(args, "max_comment_length", 1000),
+            )
+            # Show message if not in preview mode
+            if not (interactive and (not args.dry_run) and (not args.skip_preview) and args.preview_count > 0):
+                from ytce.ai.input.comments import load_comments_from_config
+                total_comments = len(load_comments_from_config(job.input, limit=None))
+                print(f"🚀 Starting full analysis on {total_comments} comments...")
+            try:
+                result, cost_summary = run_once(run_config, is_preview=False)
+            except RuntimeError as e:
+                if str(e).isdigit():
+                    return int(str(e))
+                raise
+
+            print()  # New line after progress
+            write_csv_from_analysis_result(result, output_path)
+
+            print_success(f"AI analysis complete. Wrote: {output_path}")
+            print_success(f"Comments: {result.total_comments} | Tasks: {result.total_tasks}")
+            
+            # Display cost summary
+            if cost_summary.total_cost > 0:
+                print()
+                print("💰 Cost Summary:")
+                print(f"  Total cost: ${cost_summary.total_cost:.4f}")
+                print(f"  Input tokens: {cost_summary.total_input_tokens:,} (${cost_summary.input_cost:.4f})")
+                if cost_summary.total_cached_tokens > 0:
+                    print(f"  Cached tokens: {cost_summary.total_cached_tokens:,} (${cost_summary.cached_cost:.4f})")
+                print(f"  Output tokens: {cost_summary.total_output_tokens:,} (${cost_summary.output_cost:.4f})")
+            elif not args.dry_run:
+                print("  (Cost calculation not available for this model)")
+            
+            return EXIT_SUCCESS
 
         # ytce open
         if args.cmd == "open":
