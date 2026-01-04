@@ -1,0 +1,57 @@
+version: 1
+
+# Product feedback analysis example
+# This example shows how to analyze user feedback for product improvement insights
+
+input:
+  path: "./data/VIDEO_ID/comments.jsonl"
+  format: jsonl
+  id_field: cid
+  text_field: text
+
+custom_prompt: |
+  This video announces a new product feature. We're analyzing user comments to identify:
+  - Feature requests and product improvement suggestions
+  - User sentiment and concerns
+  - Use cases and expectations
+  - Pain points and issues users are experiencing
+
+tasks:
+  # Translation for international audience analysis
+  - id: translation_ru
+    type: translation
+    question: "Translate this comment to Russian, preserving the original meaning, tone, and any technical terms or product names."
+    target_language: "Russian"
+
+  # Sentiment analysis
+  - id: sentiment
+    type: multi_class
+    question: "What is the overall sentiment of this comment towards the product?"
+    labels: ["positive", "neutral", "negative", "mixed"]
+
+  # Feature request detection
+  - id: feature_request
+    type: binary_classification
+    question: "Does this comment contain a specific feature request or product improvement suggestion?"
+    labels: ["yes", "no"]
+
+  # Topic classification
+  - id: topics
+    type: multi_label
+    question: "What aspects of the product are mentioned in this comment?"
+    labels:
+      - usability
+      - performance
+      - pricing
+      - features
+      - bugs
+      - comparison
+      - support
+    max_labels: 3
+
+  # Importance scoring
+  - id: importance
+    type: scoring
+    question: "How important or actionable is this comment for product improvement? (0 = not useful, 1 = critical feedback)"
+    scale: [0.0, 1.0]
+

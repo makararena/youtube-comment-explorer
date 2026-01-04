@@ -7,6 +7,7 @@ YouTube Data Scraper - unified tool for scraping YouTube data without API:
 - Video comments (with sorting and pagination)
 - Recursive channel + comments pipeline
 - **Batch processing for multiple channels**
+- **AI comment analysis** (sentiment, translation, classification, scoring)
 - Configuration management via ytce.yaml
 - Multiple export formats (JSON, CSV, Parquet)
 - Beautiful progress output with emojis
@@ -40,13 +41,61 @@ youtube-data-scraper/
 |       |-- models/                  # typed structures
 |       |   |-- video.py
 |       |   `-- comment.py
+|       |-- ai/                      # AI analysis engine
+|       |   |-- domain/              # Domain models (immutable)
+|       |   |   |-- comment.py
+|       |   |   |-- config.py
+|       |   |   |-- result.py
+|       |   |   `-- task.py
+|       |   |-- input/               # Input parsers
+|       |   |   |-- comments.py
+|       |   |   |-- config.py
+|       |   |   |-- job.py
+|       |   |   |-- questions.py
+|       |   |   `-- validators.py
+|       |   |-- models/              # LLM adapters
+|       |   |   |-- base.py
+|       |   |   |-- errors.py
+|       |   |   |-- openai.py
+|       |   |   `-- tokens.py
+|       |   |-- promts/              # Prompt compilation
+|       |   |   |-- compiler.py
+|       |   |   |-- formatter.py
+|       |   |   `-- templates.py
+|       |   |-- runner/              # Orchestration
+|       |   |   |-- analysis.py
+|       |   |   |-- batching.py
+|       |   |   `-- checkpoint.py
+|       |   |-- tasks/               # Task executors
+|       |   |   |-- base.py
+|       |   |   |-- binary_classification.py
+|       |   |   |-- multi_class.py
+|       |   |   |-- multi_label.py
+|       |   |   |-- scoring.py
+|       |   |   `-- translation.py
+|       |   |-- output/              # CSV export
+|       |   |   |-- csv.py
+|       |   |   `-- formatter.py
+|       |   |-- README.md
+|       |   |-- ARCHITECTURE.md
+|       |   `-- TROUBLESHOOTING.md
 |       `-- utils/
 |           |-- logging.py
 |           |-- parsing.py
 |           |-- helpers.py
 |           `-- progress.py
 |-- data/                            # All exports (auto-created, gitignored)
-|   `-- .gitkeep                     # Keep folder in git
+|   `-- results/                     # AI analysis results
+|       `-- VIDEO_ID/
+|           `-- results.csv
+|-- examples/                        # Example question files
+|   `-- questions/
+|       |-- basic-sentiment.yaml
+|       |-- comprehensive-analysis.yaml
+|       |-- content-moderation.yaml
+|       |-- product-feedback.yaml
+|       |-- translation-multilanguage.yaml
+|       `-- README.md
 |-- docs/
 |   |-- commands.txt                 # Legacy reference
 |   |-- QUICK_REFERENCE.md           # Quick command reference
@@ -58,21 +107,22 @@ youtube-data-scraper/
 |-- LICENSE
 |-- README.md
 |-- STRUCTURE.md
-`-- ytce.yaml                        # Config file (created by ytce init)
+`-- ytce.yaml                        # Config file (create manually)
 ```
 
 ## Module Responsibilities
 
 ### `src/ytce/cli/main.py` (Main CLI)
 - Unified command-line interface
-- Six subcommands: `init`, `channel`, `video`, `comments`, `batch`, `open`
+- Seven subcommands: `init`, `channel`, `video`, `comments`, `batch`, `open`, `analyze`
 - Auto-generates output paths in `data/` folder
 - Loads configuration from ytce.yaml
 - Orchestrates calls to pipelines
+- AI analysis command (`analyze`) with dry-run support
 
 ### `src/ytce/pipelines/`
 - `channel_videos.py`: exports videos metadata in JSON, CSV, or Parquet format
-- `video_comments.py`: exports comments in JSONL, CSV, or Parquet format for a single video
+- `video_comments.py`: exports comments for a single video with optional polling/streaming
 - `channel_comments.py`: (legacy) exports channel videos + per-video comments
 - `scraper.py`: **core scraping logic** - reusable `scrape_channel()` function
 - `batch.py`: batch processing for multiple channels with reports
@@ -89,16 +139,58 @@ youtube-data-scraper/
 ### `src/ytce/storage/`
 - `paths.py`: default output paths
 - `writers.py`: JSON, JSONL, CSV, and Parquet writers
+- `state.py`: watermark + comment snapshot state for polling/streaming
+
+### `src/ytce/streaming/`
+- `base_loader.py`: streaming loader interface
+- `azure_event_hubs_loader.py`: Azure Event Hubs producer
+- `local_loader.py`: local JSONL streaming for testing
+
+### `src/ytce/ai/` (AI Analysis Engine)
+Standalone AI analysis engine for text comments. Works with any comment source (YouTube, CSV, etc.).
+
+**Domain Layer** (`domain/`):
+- Pure immutable data models (no I/O, no API calls)
+- `Comment`: input comment object
+- `TaskConfig`, `TaskType`: describes what to compute
+- `TaskResult`, `EnrichedComment`, `AnalysisResult`: normalized outputs
+
+**Input Layer** (`input/`):
+- `job.py`: loads `questions.yaml` into `JobSpec`
+- `comments.py`: loads comments from file (CSV/JSONL/Parquet) with field mapping
+- `validators.py`: validates task configurations
+
+**Models Layer** (`models/`):
+- `base.py`: `ModelAdapter` interface
+- `openai.py`: OpenAI API adapter
+- `MockAdapter`: dry-run mode (no network calls)
+
+**Prompts Layer** (`promts/`):
+- `compiler.py`: builds deterministic prompts per `TaskType`
+- `templates.py`: prompt templates for each task type
+- Enforces strict JSON output shape
+
+**Tasks Layer** (`tasks/`):
+- Task executors: `binary_classification`, `multi_class`, `multi_label`, `scoring`, `translation`
+- Pure execution logic (no file I/O)
+- Compile prompts → call model → parse/validate JSON → return `TaskResult`
+
+**Runner Layer** (`runner/`):
+- `analysis.py`: main `run_analysis()` orchestrator
+- `batching.py`: batch management
+- `checkpoint.py`: resume support for long-running analyses
+
+**Output Layer** (`output/`):
+- `csv.py`: flattens results into CSV columns
+- `formatter.py`: result formatting helpers
 
 ## Data Flow
 
 ### 1. Init Command
 ```
 User -> ytce init
-  -> config.init_project()
-  -> Creates data/ directory
-  -> Creates ytce.yaml config file
-  -> Creates channels.txt template
+  -> cli.init_questions_yaml()
+  -> Creates questions.yaml template for AI analysis
 ```
 
 ### 2. Channel Command (with comments)
@@ -138,15 +230,30 @@ User -> ytce open @channel
 
 ### 6. Batch Command
 ```
-User -> ytce batch channels.txt
+User -> ytce batch [channels_file]
   -> config.load_config()
-  -> utils.channels.parse_channels_file()
+  -> utils.channels.parse_channels_file() or config channels list
   -> For each channel:
      -> pipelines.scraper.scrape_channel()
      -> Collects ChannelStats
   -> Generates BatchReport
   -> Saves report.json + errors.log to data/_batch/
   -> data/<channel1>/, data/<channel2>/, ...
+```
+
+### 7. Analyze Command (AI Analysis)
+```
+User -> ytce analyze questions.yaml
+  -> config.load_config()
+  -> ai.input.job.load_job() -> JobSpec
+  -> ai.input.comments.load_comments_from_config() -> List[Comment]
+  -> ai.runner.analysis.run_analysis()
+     -> For each task:
+        -> Batch comments
+        -> ai.tasks.execute_task() -> Dict[comment_id, TaskResult]
+        -> Merge into EnrichedComment
+  -> ai.output.write_csv_from_analysis_result()
+  -> data/results/<VIDEO_ID>/results.csv
 ```
 
 ## Key Features
@@ -166,7 +273,8 @@ User -> ytce batch channels.txt
 ### Fresh Scraping
 - Each channel scrape starts fresh, deleting any existing data
 - Simple and predictable behavior
-- No complex state management
+- Stateless by default
+- Optional watermark state is stored for comment polling/streaming
 
 ### Progress Tracking
 - Beautiful emoji-based progress indicators
@@ -181,6 +289,11 @@ User -> ytce batch channels.txt
 - Consent redirect bypass
 - Robust JSON extraction
 - Continuation token fallback
+
+### Streaming & Watermarks
+- Optional real-time streaming for comment polling
+- Watermark-based deltas (`published_at > watermark`)
+- Delta and state files stored alongside comment outputs
 
 ## Output Formats
 
@@ -215,6 +328,10 @@ Each line is a JSON object:
 {"cid": "...", "text": "Comment text", "text_length": 12, "time": "2 days ago", "author": "@user", "channel": "UC...", "votes": "5", "replies": "2", "photo": "https://...", "heart": false, "reply": false}
 ```
 
+When comment polling/streaming is enabled, the scraper also writes:
+- `comments.delta.<ext>` with new comments since the last poll
+- `comments.state.json` with the watermark and latest comment snapshot
+
 ### CSV Format
 Videos and comments can be exported to CSV files with headers, suitable for spreadsheet applications and data analysis tools.
 
@@ -223,10 +340,15 @@ Videos and comments can be exported to Apache Parquet format, a columnar storage
 
 ## Dependencies
 
+**Core:**
 - `requests` - HTTP client for web scraping
 - `pyyaml` - YAML config file support
 - `pyarrow` - Parquet file format support
 - Python 3.7+ - type hints, f-strings
+
+**AI Analysis (optional):**
+- `openai` - OpenAI API client (required for `ytce analyze` without `--dry-run`)
+- `pandas` - CSV/Parquet file handling (required for CSV/Parquet formats)
 
 ## Git Configuration
 
@@ -267,9 +389,9 @@ ytce channel @test --limit 1 --format parquet
 ytce comments VIDEO_ID --limit 1 --format parquet
 
 # Test batch processing
-# Edit channels.txt with test channels
-ytce batch channels.txt --limit 1 --dry-run
-ytce batch channels.txt --limit 1 --format parquet
+# Add channels to ytce.yaml
+ytce batch --limit 1 --dry-run
+ytce batch --limit 1 --format parquet
 
 # Check data folder
 find data -type f
