@@ -72,7 +72,8 @@ class VideoBatchReport:
 
 def run_batch_videos(
     *,
-    videos_file: str,
+    videos_file: Optional[str] = None,
+    videos: Optional[List[str]] = None,
     base_dir: str = "data",
     limit: Optional[int] = None,
     sort: str = "recent",
@@ -88,6 +89,7 @@ def run_batch_videos(
     
     Args:
         videos_file: Path to file containing video list
+        videos: Video list from config
         base_dir: Base directory for outputs
         limit: Limit comments per video
         sort: Comment sort order
@@ -103,16 +105,21 @@ def run_batch_videos(
     """
     started_at = datetime.now(timezone.utc)
     
-    # Parse videos file
-    print_step(f"Reading videos from: {videos_file}")
-    try:
-        videos = parse_videos_file(videos_file)
-    except FileNotFoundError:
-        print_error(f"File not found: {videos_file}")
-        raise
+    if videos is None:
+        if not videos_file:
+            raise ValueError("No videos provided")
+        # Parse videos file
+        print_step(f"Reading videos from: {videos_file}")
+        try:
+            videos = parse_videos_file(videos_file)
+        except FileNotFoundError:
+            print_error(f"File not found: {videos_file}")
+            raise
+    else:
+        print_step("Reading videos from: ytce.yaml")
     
     if not videos:
-        print_error("No valid videos found in file")
+        print_error("No valid videos found")
         raise ValueError("No videos to process")
     
     print_success(f"Found {len(videos)} video(s) to process")
@@ -123,8 +130,15 @@ def run_batch_videos(
     os.makedirs(batch_dir, exist_ok=True)
     
     # Copy videos file as snapshot
-    import shutil
-    shutil.copy(videos_file, os.path.join(batch_dir, "videos.txt"))
+    if videos_file:
+        import shutil
+        shutil.copy(videos_file, os.path.join(batch_dir, "videos.txt"))
+    else:
+        snapshot_path = os.path.join(batch_dir, "videos.txt")
+        with open(snapshot_path, "w", encoding="utf-8") as f:
+            f.write("# Videos snapshot (from ytce.yaml)\n")
+            for video_id in videos:
+                f.write(f"{video_id}\n")
     
     # Open errors log
     errors_log = os.path.join(batch_dir, "errors.log")
@@ -323,4 +337,3 @@ def _print_final_summary(report: VideoBatchReport) -> None:
     print(f"⏱ Total time:     {format_duration(report.total_duration_sec)}")
     print("━" * 60)
     print()
-

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import List
+from typing import Iterable, List
 
 
 def parse_videos_file(file_path: str) -> List[str]:
@@ -51,6 +51,31 @@ def parse_videos_file(file_path: str) -> List[str]:
     return videos
 
 
+def parse_videos_list(entries: Iterable[str]) -> List[str]:
+    """
+    Parse a list of video entries and extract valid video IDs.
+
+    Supports the same formats as parse_videos_file.
+    """
+    videos = []
+
+    for idx, entry in enumerate(entries, 1):
+        if not isinstance(entry, str):
+            print(f"⚠️  Entry {idx}: Skipping non-string video reference: {entry!r}")
+            continue
+        line = entry.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        video_id = extract_video_id(line)
+        if video_id:
+            videos.append(video_id)
+        else:
+            print(f"⚠️  Entry {idx}: Skipping invalid video ID: {line}")
+
+    return videos
+
+
 def extract_video_id(text: str) -> str | None:
     """
     Extract video ID from various formats.
@@ -80,4 +105,3 @@ def extract_video_id(text: str) -> str | None:
         return match.group(1)
     
     return None
-

@@ -17,7 +17,9 @@ from ytce.pipelines.channel_videos import run as run_channel_videos
 from ytce.pipelines.scraper import ScrapeConfig, scrape_channel
 from ytce.pipelines.video_comments import run as run_video_comments
 from ytce.storage.paths import channel_output_dir, channel_videos_path, channel_videos_path_with_format, video_comments_path
+from ytce.utils.channels import parse_channels_list
 from ytce.utils.progress import print_error, print_success
+from ytce.utils.videos import parse_videos_list
 
 
 class GroupedHelpFormatter(argparse.RawDescriptionHelpFormatter):
@@ -39,8 +41,8 @@ class GroupedHelpFormatter(argparse.RawDescriptionHelpFormatter):
                     ("channel", "Download channel videos and comments"),
                     ("video", "Download single video metadata"),
                     ("comments", "Download comments for a video"),
-                    ("batch", "Scrape multiple channels from a file"),
-                    ("batch-videos", "Scrape multiple videos from a file"),
+                    ("batch", "Scrape multiple channels from config or file"),
+                    ("batch-videos", "Scrape multiple videos from config or file"),
                 ],
                 "Utilities": [
                     ("open", "Open output directory in file manager"),
@@ -149,12 +151,11 @@ tasks:
 
 def init_questions_yaml() -> int:
     """
-    Generate an example questions.yaml file and project files (channels.txt, videos.txt) in the current working directory.
-    
+    Generate an example questions.yaml file in the current working directory.
+
     Returns:
         Exit code (0 for success, non-zero for error)
     """
-    from ytce.config import CHANNELS_FILE, CHANNELS_TEMPLATE, VIDEOS_FILE, VIDEOS_TEMPLATE
     
     target_path = os.path.join(os.getcwd(), "questions.yaml")
     
@@ -172,24 +173,6 @@ def init_questions_yaml() -> int:
             f.write(QUESTIONS_YAML_TEMPLATE.lstrip())
         
         print_success(f"Generated: {target_path}")
-        
-        # Create channels.txt if it doesn't exist
-        channels_path = os.path.join(os.getcwd(), CHANNELS_FILE)
-        if not os.path.exists(channels_path):
-            with open(channels_path, "w", encoding="utf-8") as f:
-                f.write(CHANNELS_TEMPLATE)
-            print_success(f"Generated: {channels_path}")
-        else:
-            print(f"⚠️  {CHANNELS_FILE} already exists, skipping")
-        
-        # Create videos.txt if it doesn't exist
-        videos_path = os.path.join(os.getcwd(), VIDEOS_FILE)
-        if not os.path.exists(videos_path):
-            with open(videos_path, "w", encoding="utf-8") as f:
-                f.write(VIDEOS_TEMPLATE)
-            print_success(f"Generated: {videos_path}")
-        else:
-            print(f"⚠️  {VIDEOS_FILE} already exists, skipping")
         
         print()
         print("Next steps:")
@@ -216,8 +199,9 @@ Quick Examples:
   ytce channel @realmadrid                    # Download channel videos + comments
   ytce channel @skryp --limit 5               # First 5 videos only
   ytce comments dQw4w9WgXcQ                  # Download comments for one video
-  ytce batch channels.txt                    # Scrape multiple channels
-  ytce batch-videos videos.txt                # Scrape multiple videos
+  ytce batch                                # Scrape channels from ytce.yaml
+  ytce batch --channels-file channels.txt    # Scrape multiple channels from a file
+  ytce batch-videos --videos-file videos.txt # Scrape multiple videos from a file
   
   # AI Analysis
   ytce init                                   # Generate questions.yaml template
@@ -503,12 +487,14 @@ Examples:
     # ytce batch
     p_batch = sub.add_parser(
         "batch",
-        help="Scrape multiple channels from a file",
-        usage="ytce batch <channels_file> [options]",
-        description="Scrape multiple channels listed in a file. Uses same options as 'ytce channel'.",
+        help="Scrape multiple channels from config or file",
+        usage="ytce batch [<channels_file>] [options]",
+        description="Scrape multiple channels from ytce.yaml or a file. Uses same options as 'ytce channel'.",
         epilog="""
 Examples:
-  ytce batch channels.txt                        # Scrape all channels
+  ytce batch                                      # Scrape channels from ytce.yaml
+  ytce batch channels.txt                         # Scrape channels from a file
+  ytce batch --channels-file channels.txt         # Scrape channels from a file
   ytce batch channels.txt --format parquet       # Export to Parquet
   ytce batch channels.txt --limit 10             # First 10 videos per channel
   ytce batch channels.txt --fail-fast            # Stop on first error
@@ -516,7 +502,8 @@ Examples:
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_batch.add_argument("channels_file", metavar="<channels_file>", help="Path to file containing channel list")
+    p_batch.add_argument("channels_file_pos", nargs="?", metavar="<channels_file>", help="Path to file containing channel list")
+    p_batch.add_argument("--channels-file", dest="channels_file", help="Path to file containing channel list")
     p_batch.add_argument("--limit", type=int, default=None, help="Limit number of videos per channel")
     p_batch.add_argument("--per-video-limit", type=int, default=None, help="Limit comments per video")
     p_batch.add_argument("--sort", choices=["recent", "popular"], default=None, help="Comment sort order (default: from config or 'recent')")
@@ -531,12 +518,14 @@ Examples:
     # ytce batch-videos
     p_batch_videos = sub.add_parser(
         "batch-videos",
-        help="Scrape multiple videos from a file",
-        usage="ytce batch-videos <videos_file> [options]",
-        description="Scrape comments for multiple videos listed in a file. Uses same options as 'ytce comments'.",
+        help="Scrape multiple videos from config or file",
+        usage="ytce batch-videos [<videos_file>] [options]",
+        description="Scrape comments for multiple videos from ytce.yaml or a file. Uses same options as 'ytce comments'.",
         epilog="""
 Examples:
-  ytce batch-videos videos.txt                    # Scrape all videos
+  ytce batch-videos                               # Scrape videos from ytce.yaml
+  ytce batch-videos videos.txt                    # Scrape videos from a file
+  ytce batch-videos --videos-file videos.txt      # Scrape videos from a file
   ytce batch-videos videos.txt --format parquet   # Export to Parquet
   ytce batch-videos videos.txt --limit 500        # Max 500 comments per video
   ytce batch-videos videos.txt --fail-fast        # Stop on first error
@@ -544,7 +533,8 @@ Examples:
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_batch_videos.add_argument("videos_file", metavar="<videos_file>", help="Path to file containing video list")
+    p_batch_videos.add_argument("videos_file_pos", nargs="?", metavar="<videos_file>", help="Path to file containing video list")
+    p_batch_videos.add_argument("--videos-file", dest="videos_file", help="Path to file containing video list")
     p_batch_videos.add_argument("--limit", type=int, default=None, help="Limit comments per video")
     p_batch_videos.add_argument("--sort", choices=["recent", "popular"], default=None, help="Comment sort order (default: from config or 'recent')")
     p_batch_videos.add_argument("--language", default=None, help="Language code (default: from config or 'en')")
@@ -1207,6 +1197,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 limit=args.limit,
                 language=language,
                 format=format_arg,
+                streaming=config.get("streaming"),
             )
             return EXIT_SUCCESS
 
@@ -1227,9 +1218,20 @@ def main(argv: Optional[list[str]] = None) -> int:
             
             # Determine base directory
             batch_base_dir = args.out_dir or base_dir
-            
+
+            channels_file = args.channels_file or args.channels_file_pos
+            channels = None
+            if not channels_file:
+                raw_channels = config.get("channels") or []
+                channels = parse_channels_list(raw_channels)
+                if not channels:
+                    print_error("No channels provided. Set 'channels' in ytce.yaml or pass --channels-file.")
+                    from ytce.errors import EXIT_USER_ERROR
+                    return EXIT_USER_ERROR
+
             run_batch(
-                channels_file=args.channels_file,
+                channels_file=channels_file,
+                channels=channels,
                 base_dir=batch_base_dir,
                 max_videos=args.limit,
                 per_video_limit=args.per_video_limit,
@@ -1252,9 +1254,20 @@ def main(argv: Optional[list[str]] = None) -> int:
             
             # Determine base directory
             batch_base_dir = base_dir
-            
+
+            videos_file = args.videos_file or args.videos_file_pos
+            videos = None
+            if not videos_file:
+                raw_videos = config.get("videos") or []
+                videos = parse_videos_list(raw_videos)
+                if not videos:
+                    print_error("No videos provided. Set 'videos' in ytce.yaml or pass --videos-file.")
+                    from ytce.errors import EXIT_USER_ERROR
+                    return EXIT_USER_ERROR
+
             run_batch_videos(
-                videos_file=args.videos_file,
+                videos_file=videos_file,
+                videos=videos,
                 base_dir=batch_base_dir,
                 limit=args.limit,
                 sort=sort,

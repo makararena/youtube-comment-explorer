@@ -70,6 +70,7 @@ pytest tests/
 ytce init
 ytce channel @test --limit 1 --dry-run
 ytce analyze questions.yaml --dry-run
+ytce comments dQw4w9WgXcQ --limit 5
 ytce --version
 
 # 3. Check help messages
@@ -117,6 +118,7 @@ youtube-data-scraper/
 │   ├── pipelines/        # High-level workflows
 │   ├── youtube/          # YouTube scraping core
 │   ├── storage/          # File I/O
+│   ├── streaming/        # Streaming loaders (Event Hubs, local)
 │   ├── models/           # Data structures
 │   ├── ai/               # AI analysis engine
 │   │   ├── domain/       # Domain models
@@ -388,4 +390,3 @@ Every contribution helps make ytce better. Whether it's:
 - Improving documentation
 
 ...your help is appreciated! 🙏
-

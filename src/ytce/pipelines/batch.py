@@ -15,7 +15,8 @@ from ytce.utils.progress import format_bytes, format_duration, format_number, pr
 
 def run_batch(
     *,
-    channels_file: str,
+    channels_file: Optional[str] = None,
+    channels: Optional[List[str]] = None,
     base_dir: str = "data",
     max_videos: Optional[int] = None,
     per_video_limit: Optional[int] = None,
@@ -32,6 +33,7 @@ def run_batch(
     
     Args:
         channels_file: Path to file containing channel list
+        channels: Channel list from config
         base_dir: Base directory for outputs
         max_videos: Limit videos per channel
         per_video_limit: Limit comments per video
@@ -48,16 +50,21 @@ def run_batch(
     """
     started_at = datetime.now(timezone.utc)
     
-    # Parse channels file
-    print_step(f"Reading channels from: {channels_file}")
-    try:
-        channels = parse_channels_file(channels_file)
-    except FileNotFoundError:
-        print_error(f"File not found: {channels_file}")
-        raise
+    if channels is None:
+        if not channels_file:
+            raise ValueError("No channels provided")
+        # Parse channels file
+        print_step(f"Reading channels from: {channels_file}")
+        try:
+            channels = parse_channels_file(channels_file)
+        except FileNotFoundError:
+            print_error(f"File not found: {channels_file}")
+            raise
+    else:
+        print_step("Reading channels from: ytce.yaml")
     
     if not channels:
-        print_error("No valid channels found in file")
+        print_error("No valid channels found")
         raise ValueError("No channels to process")
     
     print_success(f"Found {len(channels)} channel(s) to process")
@@ -68,8 +75,15 @@ def run_batch(
     os.makedirs(batch_dir, exist_ok=True)
     
     # Copy channels file as snapshot
-    import shutil
-    shutil.copy(channels_file, os.path.join(batch_dir, "channels.txt"))
+    if channels_file:
+        import shutil
+        shutil.copy(channels_file, os.path.join(batch_dir, "channels.txt"))
+    else:
+        snapshot_path = os.path.join(batch_dir, "channels.txt")
+        with open(snapshot_path, "w", encoding="utf-8") as f:
+            f.write("# Channels snapshot (from ytce.yaml)\n")
+            for channel in channels:
+                f.write(f"{channel}\n")
     
     # Open errors log
     errors_log = os.path.join(batch_dir, "errors.log")
@@ -237,4 +251,3 @@ def _print_final_summary(report: BatchReport) -> None:
     print(f"⏱ Total time:     {format_duration(report.total_duration_sec)}")
     print("━" * 60)
     print()
-

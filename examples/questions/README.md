@@ -2,6 +2,8 @@
 
 This folder contains example `questions.yaml` files demonstrating different use cases for AI comment analysis.
 
+Note: Streaming and polling features are documented in the top-level `README.md` and are independent of these AI examples.
+
 ## Examples
 
 ### Basic Sentiment (`basic-sentiment.yaml`)
@@ -217,4 +219,3 @@ data/results/{VIDEO_ID}/results.csv
 Each task creates two columns:
 - `{task_id}_value`: The result value
 - `{task_id}_confidence`: Confidence score (0.0-1.0)
-

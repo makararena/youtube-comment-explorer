@@ -66,6 +66,7 @@ def test_feature_name():
 - ❌ HTML parsing (YouTube structure changes frequently)
 - ❌ Real file I/O in pipelines (tested via integration tests)
 - ❌ Real LLM API calls (use `--dry-run` mode or mocks)
+- ❌ External streaming providers (Event Hubs) or live polling
 
 ## Mocking
 
@@ -95,4 +96,3 @@ These tests run automatically on:
 - Release tags
 
 All tests must pass before merging.
-

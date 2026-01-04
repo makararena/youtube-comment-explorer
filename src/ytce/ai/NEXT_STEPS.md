@@ -65,6 +65,8 @@ All planned features have been implemented and are available in the codebase.
 
 The following are potential future improvements:
 
+Note: Comment streaming for the scraper is implemented in the core pipeline; this list is AI-focused.
+
 #### Additional Model Adapters
 - Support for other LLM providers (Anthropic Claude, Google Gemini, etc.)
 - Local model support (Ollama, llama.cpp)
@@ -88,7 +90,7 @@ The following are potential future improvements:
 - JSON output format (structured, nested)
 - Parquet output format
 - Database export (SQLite, PostgreSQL)
-- Real-time streaming API
+- AI result streaming API
 
 #### Developer Experience
 - Interactive question builder CLI
@@ -118,4 +120,3 @@ The implementation follows these principles:
 ## Usage
 
 See `README.md` and `ARCHITECTURE.md` for detailed usage and architecture documentation.
-

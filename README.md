@@ -27,16 +27,14 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. Initialize (optional but recommended)
+### 2. Initialize (optional for AI analysis)
 
 ```bash
 ytce init
 ```
 
 This creates:
-- `data/` directory for outputs
-- `ytce.yaml` config file with smart defaults
-- `channels.txt` template for batch scraping
+- `questions.yaml` template for AI analysis
 
 ### 3. Download data
 
@@ -57,9 +55,11 @@ ytce open @skryp
 
 **Multiple channels (batch):**
 ```bash
-# Edit channels.txt with your channels
-# Then run batch scraping
-ytce batch channels.txt
+# Add channels to ytce.yaml, then run:
+ytce batch
+
+# Or use a channels file:
+ytce batch --channels-file channels.txt
 ```
 
 ## Usage
@@ -69,13 +69,10 @@ ytce batch channels.txt
 The most efficient way to scrape multiple channels:
 
 ```bash
-# 1. Initialize project (creates channels.txt template)
-ytce init
+# 1. Add your channel list to ytce.yaml
 
-# 2. Edit channels.txt with your channel list
-
-# 3. Run batch scraping
-ytce batch channels.txt
+# 2. Run batch scraping
+ytce batch
 ```
 
 This will:
@@ -83,7 +80,18 @@ This will:
 2. Save results to `data/<channel>/`
 3. Create batch report in `data/_batch/<timestamp>/`
 
-**channels.txt format:**
+**channels list (ytce.yaml):**
+
+```yaml
+channels:
+  - "@skryp"
+  - "@errornil"
+  - "https://www.youtube.com/@realmadrid"
+  - "https://www.youtube.com/channel/UC1234567890"
+  - "UC1234567890"
+```
+
+**External file format (channels.txt):**
 
 ```text
 # List your channels, one per line
@@ -102,19 +110,19 @@ UC1234567890
 
 ```bash
 # Export to Parquet format
-ytce batch channels.txt --format parquet
+ytce batch --channels-file channels.txt --format parquet
 
 # Limit videos and comments
-ytce batch channels.txt --limit 10 --per-video-limit 100
+ytce batch --channels-file channels.txt --limit 10 --per-video-limit 100
 
 # Preview without downloading
-ytce batch channels.txt --dry-run
+ytce batch --channels-file channels.txt --dry-run
 
 # Stop on first error
-ytce batch channels.txt --fail-fast
+ytce batch --channels-file channels.txt --fail-fast
 
 # Add delay between channels (default: 2 seconds)
-ytce batch channels.txt --sleep-between 5
+ytce batch --channels-file channels.txt --sleep-between 5
 ```
 
 **Batch artifacts:**
@@ -125,7 +133,7 @@ After running batch, you'll find:
 data/
 ├── _batch/
 │   └── 2025-01-05_12-30/
-│       ├── channels.txt    # Snapshot of your channels file
+│       ├── channels.txt    # Snapshot of your channels list
 │       ├── report.json     # Machine-readable results
 │       └── errors.log      # Error details (if any)
 ├── channel1/
@@ -139,7 +147,7 @@ data/
 **Batch output example:**
 
 ```
-▶ Reading channels from: channels.txt
+▶ Reading channels from: ytce.yaml
 ✔ Found 12 channel(s) to process
 
 ▶ [1/12] Processing: @skryp
@@ -520,14 +528,166 @@ The custom prompt is included in all analysis tasks to provide context about you
 
 For more details, see `src/ytce/ai/README.md` and `examples/questions/README.md`.
 
+## Streaming Comments (Azure Event Hubs or Local)
+
+Stream comments in real-time to Azure Event Hubs or a local JSONL file for testing. The streaming feature supports continuous polling for new comments and streams only deltas based on a watermark.
+
+### Quick Start
+
+1. **Install streaming dependencies:**
+   ```bash
+   pip install -e ".[streaming]"
+   # Or install directly:
+   pip install azure-eventhub>=5.11.0
+   ```
+
+2. **Configure streaming in `ytce.yaml`:**
+   ```yaml
+   streaming:
+     enabled: true
+     provider: azure_event_hubs  # or "local"
+     poll_interval_sec: 30  # Poll for new comments every 30 seconds
+     event_hubs:
+       enabled: true
+       connection_string: "Endpoint=sb://..."  # Your Event Hub connection string
+       event_hub_name: "comments"  # Optional: Event Hub name (if not in connection string)
+       max_batch_size: 200  # Max events per batch (100-500)
+       flush_interval_sec: 1.0  # Flush batch after 1 second if not full
+    local:
+      path: ""  # Optional: defaults to <output>.stream.jsonl
+   ```
+
+   For local testing, set `provider: local` and leave `streaming.local.path` blank to write the stream file next to your comments output in the same data folder.
+
+3. **Run with streaming:**
+   ```bash
+   ytce comments VIDEO_ID
+   ```
+
+The scraper will:
+- Poll for new comments at the specified interval
+- Stream only new comments based on the watermark (`published_at > watermark`)
+- Save all comments to local files as usual
+- Write a delta file with only new comments for each poll
+- Continue polling until interrupted (Ctrl+C)
+
+### How It Works
+
+**Polling & Watermarks:**
+- The scraper maintains state between polls to track the latest `published_at` watermark
+- Only comments newer than the last watermark are streamed
+- State is saved to `{output}.state.json` for persistence across restarts
+
+**Micro-batching:**
+- Comments are automatically batched for efficient transmission
+- Batches are sent when they reach `max_batch_size` or after `flush_interval_sec`
+- Batch size is automatically clamped between 100-500 events
+
+**Output Files:**
+- `comments.jsonl` - All comments (full history)
+- `comments.delta.jsonl` - Only new comments from the last poll
+- `comments.state.json` - Internal state for watermark tracking
+- `comments.stream.jsonl` - Local streaming output when `provider: local`
+
+### Configuration Options
+
+**Streaming Settings:**
+- `enabled` (bool) - Enable/disable streaming
+- `provider` (string) - `"azure_event_hubs"` or `"local"`
+- `poll_interval_sec` (float) - Seconds between polls (0 = single poll, no continuous mode)
+
+**Event Hubs Settings:**
+- `enabled` (bool) - Enable Event Hubs streaming
+- `connection_string` (string) - Azure Event Hubs connection string (required)
+- `event_hub_name` (string) - Event Hub name (optional if included in connection string)
+- `max_batch_size` (int) - Maximum events per batch (100-500, default: 200)
+- `flush_interval_sec` (float) - Flush batch after this many seconds (default: 1.0)
+
+**Local Streaming Settings:**
+- `path` (string) - Optional output path for streamed JSONL events (defaults to `<output>.stream.jsonl`)
+
+### Example: Continuous Monitoring
+
+Monitor a video for new comments and stream them to Event Hubs:
+
+```yaml
+# ytce.yaml
+streaming:
+  enabled: true
+  provider: azure_event_hubs
+  poll_interval_sec: 60  # Check every minute
+  event_hubs:
+    enabled: true
+    connection_string: "Endpoint=sb://myhub.servicebus.windows.net/;SharedAccessKeyName=..."
+    event_hub_name: "youtube-comments"
+    max_batch_size: 200
+    flush_interval_sec: 1.0
+```
+
+```bash
+# Run once - will poll continuously
+ytce comments dQw4w9WgXcQ
+
+# Output:
+# ▶ Fetching comments for video: dQw4w9WgXcQ
+# Poll finished
+# Video ID: dQw4w9WgXcQ
+# Fetched comments: 1234
+# New comments: 1234
+# Updated comments: 0
+# Streamed events: 1234
+# Poll duration: 5.23s
+```
+
+### Use Cases
+
+- **Real-time Analytics**: Stream comments to Azure Stream Analytics or Azure Functions for real-time processing
+- **Event-Driven Architecture**: Trigger downstream systems when new comments arrive
+- **Live Monitoring**: Monitor videos for new engagement and respond in real-time
+- **Data Pipeline Integration**: Integrate YouTube comments into existing Azure-based data pipelines
+
+### Troubleshooting
+
+**"azure-eventhub is required" error:**
+```bash
+pip install azure-eventhub>=5.11.0
+```
+
+**Streaming not working:**
+- Check that `streaming.enabled` is `true`
+- For Event Hubs: ensure `streaming.event_hubs.enabled` is `true`
+- For local: set `provider: local` and verify the output path
+- Verify your connection string is correct
+- Ensure the Event Hub name matches your Azure resource
+- Check that your connection string has send permissions
+
+**No events being streamed:**
+- Verify there are actually new comments (check `comments.delta.jsonl`)
+- Check the poll interval is appropriate for your use case
+- Review the state file to see the last watermark timestamp
+
 ## Configuration
 
-Create `ytce.yaml` in your project root (or run `ytce init`):
+Create `ytce.yaml` in your project root:
 
 ```yaml
 output_dir: data
 language: en
 comment_sort: recent
+channels: []
+videos: []
+streaming:
+  enabled: false
+  provider: azure_event_hubs
+  poll_interval_sec: 30
+  event_hubs:
+    enabled: false
+    connection_string: ""
+    event_hub_name: ""
+    max_batch_size: 200
+    flush_interval_sec: 1.0
+  local:
+    path: ""
 ```
 
 These become your defaults, so you don't need to pass flags every time.
@@ -575,7 +735,10 @@ Progress tracking includes:
 - **No API Key Required** - Uses YouTube's web interface
 - **AI Comment Analysis** - Analyze comments with sentiment, topics, translation, and more
 - **Translation Support** - Translate comments to any language for international analysis
-- **Simple & Clean** - Fresh scraping each time, no complex state management
+- **Real-time Streaming** - Stream comments to Azure Event Hubs or a local JSONL file
+- **Continuous Polling** - Automatically poll for new comments at configurable intervals
+- **Watermark Deltas** - Only streams new comments based on `published_at` watermark
+- **Stateless by Default** - Channel/batch scrapes remain stateless; polling uses a per-video state file
 - **Rich Progress Tracking** - Real-time stats with percentages, data size, and ETA
 - **Smart Data Fields** - Includes text/title length, duration in minutes for easy analysis
 - **Safe Interruption** - Ctrl+C confirmation prevents accidental data loss
@@ -595,6 +758,18 @@ Progress tracking includes:
 - `pyarrow` - Parquet format support (required for `--format parquet`)
 - `openai` - AI analysis support (required for `ytce analyze` without `--dry-run`)
 - `pandas` - CSV/Parquet file handling (required for CSV/Parquet formats)
+- `azure-eventhub` - Azure Event Hubs streaming support (required for streaming features)
+
+**Install optional dependencies:**
+```bash
+# Install all optional dependencies
+pip install -r requirements.txt
+
+# Or install specific features
+pip install -e ".[streaming]"  # For Azure Event Hubs streaming
+pip install -e ".[ai]"         # For AI analysis
+pip install -e ".[parquet]"    # For Parquet format support
+```
 
 ## Advanced Usage
 
@@ -645,6 +820,7 @@ youtube-comment-explorer/
 │       ├── pipelines/           # High-level workflows
 │       ├── youtube/             # YouTube scraping primitives
 │       ├── storage/             # File I/O and paths
+│       ├── streaming/           # Streaming loaders (Azure Event Hubs, local)
 │       ├── models/              # Data structures
 │       ├── utils/               # Helpers
 │       └── config.py            # Configuration management

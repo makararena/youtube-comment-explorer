@@ -1,5 +1,7 @@
 ## Troubleshooting AI analysis
 
+For scraper streaming/polling issues, see the top-level `README.md`.
+
 ### `ytce analyze` fails with `File not found: ./comments.csv`
 
 `questions.yaml` controls where comments are loaded from:
@@ -59,5 +61,4 @@ Mitigations:
 - reduce `--batch-size` (smaller prompts / lower error rate)
 - ensure labels/scales in `questions.yaml` are correct
 - re-run in `--dry-run` to validate plumbing first
-
 

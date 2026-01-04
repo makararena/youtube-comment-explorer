@@ -2,6 +2,8 @@
 
 This folder is a **standalone AI analysis engine** for text comments. It is designed to work on any comment source (YouTube, CSV exports, etc.) and produce **structured, CSV-ready** results.
 
+Streaming and polling features live in the core scraper; see the top-level `README.md` for those details.
+
 ### What you can do
 
 - Load comments from **CSV / JSONL / Parquet**
@@ -147,5 +149,4 @@ write_csv_from_analysis_result(result, "results.csv")
    - `tasks.execute_task()` → prompt → model → JSON → `TaskResult`
 4. Merge results into `EnrichedComment`
 5. Export with `output.write_csv_*()`
-
 

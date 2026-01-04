@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import List
+from typing import Iterable, List
 
 
 def parse_channels_file(file_path: str) -> List[str]:
@@ -51,6 +51,31 @@ def parse_channels_file(file_path: str) -> List[str]:
     return channels
 
 
+def parse_channels_list(entries: Iterable[str]) -> List[str]:
+    """
+    Parse a list of channel entries and extract valid channel references.
+
+    Supports the same formats as parse_channels_file.
+    """
+    channels = []
+
+    for idx, entry in enumerate(entries, 1):
+        if not isinstance(entry, str):
+            print(f"⚠️  Entry {idx}: Skipping non-string channel reference: {entry!r}")
+            continue
+        line = entry.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        channel = extract_channel_ref(line)
+        if channel:
+            channels.append(channel)
+        else:
+            print(f"⚠️  Entry {idx}: Skipping invalid channel reference: {line}")
+
+    return channels
+
+
 def extract_channel_ref(text: str) -> str | None:
     """
     Extract channel reference from various formats.
@@ -84,4 +109,3 @@ def extract_channel_ref(text: str) -> str | None:
         return text
     
     return None
-

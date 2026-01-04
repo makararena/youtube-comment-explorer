@@ -36,6 +36,7 @@ data/*
 channels.txt
 videos.txt
 questions.yaml
+ytce.yaml
 
 # Logs
 *.log

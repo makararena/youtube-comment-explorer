@@ -17,6 +17,23 @@ DEFAULT_CONFIG = {
     "output_dir": "data",
     "language": "en",
     "comment_sort": "recent",
+    "channels": [],
+    "videos": [],
+    "streaming": {
+        "enabled": False,
+        "provider": "azure_event_hubs",
+        "poll_interval_sec": 30,
+        "event_hubs": {
+            "enabled": False,
+            "connection_string": "",
+            "event_hub_name": "",
+            "max_batch_size": 200,
+            "flush_interval_sec": 1.0,
+        },
+        "local": {
+            "path": "",
+        },
+    },
 }
 
 CONFIG_FILE = "ytce.yaml"
@@ -169,23 +186,6 @@ def init_project(output_dir: Optional[str] = None) -> None:
     else:
         print(f"⚠️  Config file already exists: ./{CONFIG_FILE}")
     
-    # Create channels.txt template (if it doesn't exist)
-    if not os.path.exists(CHANNELS_FILE):
-        with open(CHANNELS_FILE, "w", encoding="utf-8") as f:
-            f.write(CHANNELS_TEMPLATE)
-        print(f"✔ Channels file: ./{CHANNELS_FILE}")
-    else:
-        print(f"⚠️  Channels file already exists: ./{CHANNELS_FILE}")
-    
-    # Create videos.txt template (if it doesn't exist)
-    if not os.path.exists(VIDEOS_FILE):
-        with open(VIDEOS_FILE, "w", encoding="utf-8") as f:
-            f.write(VIDEOS_TEMPLATE)
-        print(f"✔ Videos file: ./{VIDEOS_FILE}")
-    else:
-        print(f"⚠️  Videos file already exists: ./{VIDEOS_FILE}")
-    
     # Success messages
     print("✔ Project initialized")
     print(f"✔ Output directory: ./{data_dir}")
-

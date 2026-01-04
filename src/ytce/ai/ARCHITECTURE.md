@@ -2,6 +2,8 @@
 
 This document explains the runtime flow and the responsibilities of each layer.
 
+Note: Comment streaming and polling are handled in the core scraper; this document focuses on the AI analysis engine.
+
 ### High-level goal
 
 Given:
@@ -90,5 +92,4 @@ For each batch:
 - writes columns:
   - `id`, `text`, optional metadata columns
   - `{task_id}_value`, `{task_id}_confidence` for every task
-
 
